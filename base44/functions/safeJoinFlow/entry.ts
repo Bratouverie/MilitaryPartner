@@ -128,9 +128,15 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[safeJoinFlow] Child program creation failed:", e);
       // Откат: помечаем профиль как неактивный
-      await base44.asServiceRole.entities.ReferralProfile.update(profile.id, { status: "inactive" }).catch(() => {});
+      try {
+        await base44.asServiceRole.entities.ReferralProfile.update(profile.id, { status: "inactive" });
+      } catch (rollbackErr) {
+        console.error("[safeJoinFlow] Rollback failed:", rollbackErr);
+      }
       return Response.json({ error: "Child program creation failed" }, { status: 500 });
     }
+
+    const warnings = [];
 
     // Шаг 4: ProgramMembership (некритично)
     try {
@@ -145,6 +151,7 @@ Deno.serve(async (req) => {
       });
     } catch (e) {
       console.error("[safeJoinFlow] Membership creation failed (non-critical):", e);
+      warnings.push("Membership not recorded");
     }
 
     // Шаг 5: Обновляем счётчики родителя
@@ -155,6 +162,7 @@ Deno.serve(async (req) => {
       });
     } catch (e) {
       console.error("[safeJoinFlow] Counter update failed (non-critical):", e);
+      warnings.push("Parent counters not updated");
     }
 
     // Шаг 6: ActionLog
@@ -171,10 +179,12 @@ Deno.serve(async (req) => {
       });
     } catch (e) {
       console.error("[safeJoinFlow] Log creation failed (non-critical):", e);
+      warnings.push("Action log not recorded");
     }
 
     return Response.json({
       success: true,
+      warnings: warnings.length > 0 ? warnings : undefined,
       profile: {
         id: profile.id,
         secret_code: secretCode,
