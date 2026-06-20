@@ -21,6 +21,21 @@ import RegisterReferrer from '@/pages/RegisterReferrer';
 import RefLanding from '@/pages/RefLanding';
 
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
+import AdminLayout from '@/components/admin/AdminLayout';
+import ModeratorLayout from '@/components/moderator/ModeratorLayout';
+
+import AdminOverview from '@/pages/admin/AdminOverview';
+import AdminMasterLinks from '@/pages/admin/AdminMasterLinks';
+import AdminUsers from '@/pages/admin/AdminUsers';
+import AdminCandidates from '@/pages/admin/AdminCandidates';
+import AdminRewards from '@/pages/admin/AdminRewards';
+import AdminPayouts from '@/pages/admin/AdminPayouts';
+import AdminAnalytics from '@/pages/admin/AdminAnalytics';
+import AdminLogs from '@/pages/admin/AdminLogs';
+
+import ModeratorOverview from '@/pages/moderator/ModeratorOverview';
+import ModeratorCandidates from '@/pages/moderator/ModeratorCandidates';
+import ModeratorTasks from '@/pages/moderator/ModeratorTasks';
 import Overview from '@/pages/dashboard/Overview';
 import MyLink from '@/pages/dashboard/MyLink';
 import MyCandidates from '@/pages/dashboard/MyCandidates';
@@ -72,6 +87,24 @@ const AuthenticatedApp = () => {
           <Route path="/dashboard/payouts" element={<Payouts />} />
           <Route path="/dashboard/leaderboard" element={<Leaderboard />} />
           <Route path="/dashboard/security" element={<Security />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
+        <Route element={<AdminLayout />}>
+          <Route path="/admin" element={<AdminOverview />} />
+          <Route path="/admin/master-links" element={<AdminMasterLinks />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/candidates" element={<AdminCandidates />} />
+          <Route path="/admin/rewards" element={<AdminRewards />} />
+          <Route path="/admin/payouts" element={<AdminPayouts />} />
+          <Route path="/admin/analytics" element={<AdminAnalytics />} />
+          <Route path="/admin/logs" element={<AdminLogs />} />
+        </Route>
+        <Route element={<ModeratorLayout />}>
+          <Route path="/moderator" element={<ModeratorOverview />} />
+          <Route path="/moderator/candidates" element={<ModeratorCandidates />} />
+          <Route path="/moderator/tasks" element={<ModeratorTasks />} />
         </Route>
       </Route>
 
