@@ -61,171 +61,48 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
     e.preventDefault();
     setError("");
     if (currentRole !== "super_admin") { setError("Недостаточно прав."); return; }
-    // Email обязателен для staff и L1 рефералов
-    const emailLower = form.email.trim().toLowerCase();
-    if ((isL1Referrer || form.role === "moderator") && !form.program_id) { setError("Выберите программу."); return; }
+
+    if ((isL1Referrer || form.role === "moderator") && !form.program_id) { 
+      setError("Выберите программу."); 
+      return; 
+    }
+
     setLoading(true);
     try {
-      {
-        const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
-        if (existing.length > 0) { setError("Пользователь с таким email уже существует."); return; }
-      }
-
-      // Гарантируем уникальность кода
-      let secretCode;
-      let attempts = 0;
-      while (attempts < 5) {
-        secretCode = genSecretCode();
-        const conflict = await base44.entities.ReferralProfile.filter({ secret_code: secretCode });
-        if (conflict.length === 0) break;
-        attempts++;
-      }
-      const now = new Date().toISOString();
-
-      const role = isL1Referrer ? "referrer" : form.role;
-      const profile = await base44.entities.ReferralProfile.create({
-        email: emailLower,
-        full_name: form.full_name || (form.role === "admin" ? "Администратор" : form.role === "moderator" ? "Модератор" : "Реферал"),
-        role: role,
-        status: "active",
-        secret_code: secretCode,
-        masked_secret_code: maskCode(secretCode),
-        secret_code_last_sent_at: now,
-        referral_code: form.role + "-" + Date.now().toString(36),
-        level: isL1Referrer ? "L0_novice" : undefined,
+      // Используем безопасную серверную функцию для создания staff
+      const res = await base44.functions.invoke('safeCreateStaffUser', {
+        role: isL1Referrer ? 'referrer_l1' : form.role,
+        fullName: form.full_name || `${form.role} ${Date.now()}`,
+        email: form.email.trim().toLowerCase() || null,
+        programId: form.program_id || null,
       });
 
-      // Если это модератор — обновляем программу с assigned_moderator_id
-      if (form.role === "moderator" && form.program_id) {
-        const selectedProgram = freshPrograms.find(p => p.id === form.program_id);
-        if (!selectedProgram) throw new Error("Программа не найдена");
-
-        await base44.entities.ReferralProgram.update(form.program_id, {
-          assigned_moderator_id: profile.id,
-        });
+      if (!res.data?.success) {
+        const errMsg = res.data?.error || 'Ошибка создания пользователя';
+        setError(errMsg);
+        if (res.data?.critical) {
+          console.error('[AdminUsers] Critical error:', res.data);
+        }
+        setLoading(false);
+        return;
       }
 
-      // Если это L1 реферал — создаём собственную ReferralProgram
-      let childProgram = null;
-      if (isL1Referrer && form.program_id) {
-        const parentProgram = freshPrograms.find(p => p.id === form.program_id);
-        if (!parentProgram) throw new Error("Родительская программа не найдена");
+      const { profile, warnings } = res.data;
+      const secretCode = profile.secret_code;
 
-        // Генерируем уникальные коды (аналогично RefLanding.jsx)
-        const [linkCode, formCode] = await Promise.all([
-          (async () => {
-            for (let i = 0; i < 10; i++) {
-              const code = Math.random().toString(36).substr(2, 10).toUpperCase();
-              const exists = await base44.entities.ReferralProgram.filter({ link_code: code });
-              if (exists.length === 0) return code;
-            }
-            throw new Error("Не удалось сгенерировать уникальный link_code");
-          })(),
-          (async () => {
-            for (let i = 0; i < 10; i++) {
-              const code = Math.random().toString(36).substr(2, 10).toUpperCase();
-              const exists = await base44.entities.ReferralProgram.filter({ candidate_form_code: code });
-              if (exists.length === 0) return code;
-            }
-            throw new Error("Не удалось сгенерировать уникальный candidate_form_code");
-          })(),
-        ]);
-
-        // Вычисляем ancestry (как в RefLanding.jsx)
-        let ancestryIds = [];
-        try { ancestryIds = JSON.parse(parentProgram.ancestry_path_ids || "[]"); } catch {}
-        ancestryIds.push(parentProgram.id);
-        const ancestryJson = JSON.stringify(ancestryIds);
-        const ancestryText = (parentProgram.ancestry_path_text || parentProgram.base_program_title || parentProgram.title) + " / " + (form.full_name || "Реферал");
-
-        // Вычисляем названия программы (как в programUtils.js)
-        const baseProgramTitle = parentProgram.base_program_title || parentProgram.title || "";
-        const internalDisplayTitle = form.full_name
-          ? `${baseProgramTitle} — ${form.full_name}`
-          : baseProgramTitle;
-        const publicProgramTitle = baseProgramTitle;
-
-        // Создаём дочернюю программу НАПРЯМУЮ (без createChildProgram, чтобы избежать валидации "меньше квоты")
-        childProgram = await base44.entities.ReferralProgram.create({
-          title: internalDisplayTitle,
-          base_program_title: baseProgramTitle,
-          child_prefix_title: form.full_name || "Реферал",
-          internal_display_title: internalDisplayTitle,
-          public_program_title: publicProgramTitle,
-          link_code: linkCode,
-          candidate_form_code: formCode,
-          owner_user_id: profile.id,  // ← ключевое: реферал владеет этой программой!
-          parent_program_id: parentProgram.id,
-          root_program_id: parentProgram.root_program_id || parentProgram.id,
-          root_master_link_id: parentProgram.root_master_link_id,
-          assigned_moderator_id: parentProgram.assigned_moderator_id,
-          reward_quota: parentProgram.reward_quota,  // наследуем полную квоту
-          parent_reward_quota: parentProgram.reward_quota,
-          depth: (parentProgram.depth || 0) + 1,
-          ancestry_path_ids: ancestryJson,
-          ancestry_path_text: ancestryText,
-          program_kind: "child",
-          program_status: "active",
-          is_root: false,
-          is_active: true,
-          is_archived: false,
-          can_create_child: parentProgram.reward_quota > 5000,  // MIN_QUOTA
-          direct_children_count: 0,
-          children_count: 0,
-          candidates_count: 0,
-          contracts_count: 0,
-          pending_rewards_sum: 0,
-          paid_rewards_sum: 0,
-          owner_program_level: 0,
-          region_code: parentProgram.region_code,
-          region_name: parentProgram.region_name,
-          program_category: parentProgram.program_category,
-        });
-
-        // Создаём ProgramMembership БЕЗ silent catch (ошибки должны быть видны!)
-        await base44.entities.ProgramMembership.create({
-          user_id: profile.id,
-          program_id: childProgram.id,
-          membership_role: "owner",
-          membership_status: "active",
-          source_join_type: "direct_assignment",
-          source_program_id: parentProgram.id,
-          joined_at: now,
-        });
-
-        // Обновляем счётчики родителя
-        await base44.entities.ReferralProgram.update(parentProgram.id, {
-          direct_children_count: (parentProgram.direct_children_count || 0) + 1,
-          children_count: (parentProgram.children_count || 0) + 1,
+      // Если есть warnings — показываем их, но продолжаем
+      if (warnings && warnings.length > 0) {
+        warnings.forEach(w => {
+          toast({ 
+            title: "⚠️ Предупреждение", 
+            description: w,
+            variant: "destructive" 
+          });
         });
       }
-
-      // Отправляем email только если он указан
-      if (emailLower) {
-        await base44.integrations.Core.SendEmail({
-          to: emailLower,
-          subject: `Ваш аккаунт — МилитариПартнер`,
-          body: `<h2>Аккаунт создан</h2><p><strong>Секретный код для входа:</strong></p>
-      <p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p>
-      <p>Используйте код для входа — email при входе не нужен.</p>
-      <p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-        }).catch(() => {});
-      }
-
-      await base44.entities.ActionLog.create({
-        actor_user_id: getStoredProfileId(), actor_role: currentRole,
-        action_type: isL1Referrer ? "L1_REFERRER_CREATED" : "STAFF_USER_CREATED",
-        entity_type: "ReferralProfile", entity_id: profile.id,
-        action_payload: JSON.stringify({ 
-          email: emailLower || null, 
-          role: form.role, 
-          program_id: form.program_id,
-          child_program_id: childProgram?.id || null,
-        }),
-      }).catch(() => {});
 
       // Показываем код администратору сразу
-      setCreatedCode({ secretCode, profile, emailLower });
+      setCreatedCode({ secretCode, profile, emailLower: form.email.trim().toLowerCase() || null });
       onCreated();
     } catch (err) {
       setError("Ошибка создания: " + (err?.message || "попробуйте ещё раз"));
@@ -387,12 +264,16 @@ export default function AdminUsers() {
     try {
       // Soft delete: помечаем как inactive/blocked
       await base44.entities.ReferralProfile.update(u.id, { status: "blocked" });
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "USER_DELETED",
-        entity_type: "ReferralProfile", entity_id: u.id,
-        action_payload: JSON.stringify({ role: u.role, email: u.email }),
-      }).catch(() => {});
+      try {
+        await base44.entities.ActionLog.create({
+          actor_user_id: currentId, actor_role: currentRole,
+          action_type: "USER_DELETED",
+          entity_type: "ReferralProfile", entity_id: u.id,
+          action_payload: JSON.stringify({ role: u.role, email: u.email }),
+        });
+      } catch (logErr) {
+        console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      }
       toast({ title: "Пользователь удален" });
       load();
     } catch (err) {
@@ -414,12 +295,16 @@ export default function AdminUsers() {
     setLoaderFor(u.id, "status");
     const next = u.status === "active" ? "blocked" : "active";
     await base44.entities.ReferralProfile.update(u.id, { status: next });
-    await base44.entities.ActionLog.create({
-      actor_user_id: currentId, actor_role: currentRole,
-      action_type: "STAFF_STATUS_CHANGED",
-      entity_type: "ReferralProfile", entity_id: u.id,
-      action_payload: JSON.stringify({ old: u.status, new: next }),
-    }).catch(() => {});
+    try {
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "STAFF_STATUS_CHANGED",
+        entity_type: "ReferralProfile", entity_id: u.id,
+        action_payload: JSON.stringify({ old: u.status, new: next }),
+      });
+    } catch (logErr) {
+      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+    }
     toast({ title: `Статус изменён: ${next === "active" ? "Активен" : "Заблокирован"}` });
     setLoaderFor(u.id, null);
     load();
@@ -429,11 +314,15 @@ export default function AdminUsers() {
     const next = !visibleCodes[u.id];
     setVisibleCodes(prev => ({ ...prev, [u.id]: next }));
     if (next) {
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "SECRET_CODE_VIEWED",
-        entity_type: "ReferralProfile", entity_id: u.id,
-      }).catch(() => {});
+      try {
+        await base44.entities.ActionLog.create({
+          actor_user_id: currentId, actor_role: currentRole,
+          action_type: "SECRET_CODE_VIEWED",
+          entity_type: "ReferralProfile", entity_id: u.id,
+        });
+      } catch (logErr) {
+        console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      }
     }
   };
 
@@ -441,11 +330,15 @@ export default function AdminUsers() {
     if (u.secret_code) {
       await navigator.clipboard.writeText(u.secret_code);
       toast({ title: "Код скопирован!" });
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "SECRET_CODE_COPIED",
-        entity_type: "ReferralProfile", entity_id: u.id,
-      }).catch(() => {});
+      try {
+        await base44.entities.ActionLog.create({
+          actor_user_id: currentId, actor_role: currentRole,
+          action_type: "SECRET_CODE_COPIED",
+          entity_type: "ReferralProfile", entity_id: u.id,
+        });
+      } catch (logErr) {
+        console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      }
     }
   };
 
@@ -455,17 +348,29 @@ export default function AdminUsers() {
     setLoaderFor(u.id, "resend");
     const now = new Date().toISOString();
     await base44.entities.ReferralProfile.update(u.id, { secret_code_last_sent_at: now });
-    await base44.integrations.Core.SendEmail({
-      to: u.email,
-      subject: "Ваш секретный код — МилитариПартнер",
-      body: `<p>Ваш секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${u.secret_code}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-    }).catch(() => {});
-    await base44.entities.ActionLog.create({
-      actor_user_id: currentId, actor_role: currentRole,
-      action_type: "SECRET_CODE_RESENT",
-      entity_type: "ReferralProfile", entity_id: u.id,
-      action_payload: JSON.stringify({ email: u.email }),
-    }).catch(() => {});
+    try {
+      await base44.integrations.Core.SendEmail({
+        to: u.email,
+        subject: "Ваш секретный код — МилитариПартнер",
+        body: `<p>Ваш секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${u.secret_code}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
+      });
+    } catch (emailErr) {
+      toast({ 
+        title: "⚠️ Письмо не отправлено", 
+        description: "Передайте код пользователю вручную",
+        variant: "destructive" 
+      });
+    }
+    try {
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "SECRET_CODE_RESENT",
+        entity_type: "ReferralProfile", entity_id: u.id,
+        action_payload: JSON.stringify({ email: u.email }),
+      });
+    } catch (logErr) {
+      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+    }
     toast({ title: "Код повторно отправлен на email" });
     setLoaderFor(u.id, null);
   };
@@ -482,18 +387,30 @@ export default function AdminUsers() {
       secret_code_last_sent_at: now,
     });
     if (u.email) {
-      await base44.integrations.Core.SendEmail({
-        to: u.email,
-        subject: "Новый секретный код — МилитариПартнер",
-        body: `<p>Ваш новый секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-      }).catch(() => {});
+      try {
+        await base44.integrations.Core.SendEmail({
+          to: u.email,
+          subject: "Новый секретный код — МилитариПартнер",
+          body: `<p>Ваш новый секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
+        });
+      } catch (emailErr) {
+        toast({ 
+          title: "⚠️ Письмо не отправлено", 
+          description: "Код сгенерирован, но письмо не дошло",
+          variant: "destructive" 
+        });
+      }
     }
-    await base44.entities.ActionLog.create({
-      actor_user_id: currentId, actor_role: currentRole,
-      action_type: "SECRET_CODE_REGENERATED",
-      entity_type: "ReferralProfile", entity_id: u.id,
-      action_payload: JSON.stringify({ email: u.email || null }),
-    }).catch(() => {});
+    try {
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "SECRET_CODE_REGENERATED",
+        entity_type: "ReferralProfile", entity_id: u.id,
+        action_payload: JSON.stringify({ email: u.email || null }),
+      });
+    } catch (logErr) {
+      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+    }
     // Скрываем старый видимый код — данные перезагрузятся
     setVisibleCodes(prev => ({ ...prev, [u.id]: false }));
     toast({ title: u.email ? "Новый код сгенерирован и отправлен на email" : "Новый код сгенерирован. Скопируйте и передайте пользователю." });
