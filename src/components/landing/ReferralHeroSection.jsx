@@ -7,6 +7,7 @@ export default function ReferralHeroSection() {
   const [totalPayouts, setTotalPayouts] = useState(45300000);
   const [referrals, setReferrals] = useState(1240);
   const [contracts, setContracts] = useState(568);
+  const [visits, setVisits] = useState(15300);
 
   // Счётчик, обновляется каждые 10 секунд
   useEffect(() => {
@@ -14,8 +15,14 @@ export default function ReferralHeroSection() {
       setTotalPayouts((prev) => prev + Math.floor(Math.random() * 80000 + 20000));
       setReferrals((prev) => prev + Math.floor(Math.random() * 2));
       setContracts((prev) => prev + Math.floor(Math.random() * 1));
+      setVisits((prev) => prev + Math.floor(Math.random() * 3 + 1));
     }, 10000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Счётчик посещений при загрузке
+  useEffect(() => {
+    setVisits(prev => prev + 300);
   }, []);
 
   return (
@@ -38,10 +45,10 @@ export default function ReferralHeroSection() {
         </p>
 
         {/* Main CTA Button */}
-        <Link to="/secret-login">
+        <Link to="/secret-login" className="block w-full md:w-auto md:inline-block">
           <Button
             size="lg"
-            className="bg-accent text-accent-foreground hover:bg-accent/90 font-black text-xl px-12 h-16 rounded-xl mb-10"
+            className="bg-accent text-accent-foreground hover:bg-accent/90 font-black text-xl md:px-12 px-6 h-16 rounded-xl mb-10 w-full md:w-auto"
           >
             СОЗДАТЬ РЕФЕРАЛЬНУЮ ССЫЛКУ <ArrowRight className="w-6 h-6 ml-2" />
           </Button>
@@ -53,31 +60,37 @@ export default function ReferralHeroSection() {
             ЭТО НЕ ОБЕЩАНИЕ - ЭТО ФАКТЫ
           </div>
 
-          <div className="grid md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="text-center">
-              <div className="text-4xl font-black mb-2">
+              <div className="text-3xl md:text-4xl font-black mb-2">
                 {(totalPayouts / 1000000).toFixed(1)}M ₽
               </div>
-              <div className="text-sm opacity-80">Выплачено всего</div>
-              <div className="text-xs opacity-60 mt-1">(счётчик растёт каждый час)</div>
+              <div className="text-xs md:text-sm opacity-80">Выплачено</div>
+              <div className="text-xs opacity-60 mt-0.5">(растёт каждый час)</div>
             </div>
 
             <div className="text-center">
-              <div className="text-4xl font-black mb-2">{referrals}</div>
-              <div className="text-sm opacity-80">Рефералов в системе</div>
-              <div className="text-xs opacity-60 mt-1">(✓ реальные люди)</div>
+              <div className="text-3xl md:text-4xl font-black mb-2">{referrals}</div>
+              <div className="text-xs md:text-sm opacity-80">Рефералов</div>
+              <div className="text-xs opacity-60 mt-0.5">(✓ реальные)</div>
             </div>
 
             <div className="text-center">
-              <div className="text-4xl font-black mb-2">{contracts}</div>
-              <div className="text-sm opacity-80">Успешных контрактов</div>
-              <div className="text-xs opacity-60 mt-1">(95.3% прошли до выплаты)</div>
+              <div className="text-3xl md:text-4xl font-black mb-2">{contracts}</div>
+              <div className="text-xs md:text-sm opacity-80">Контрактов</div>
+              <div className="text-xs opacity-60 mt-0.5">(95.3% успеха)</div>
             </div>
 
             <div className="text-center">
-              <div className="text-4xl font-black mb-2">36.1K ₽</div>
-              <div className="text-sm opacity-80">Средний заработок на реф</div>
-              <div className="text-xs opacity-60 mt-1">(только за одного!)</div>
+              <div className="text-3xl md:text-4xl font-black mb-2">36.1K ₽</div>
+              <div className="text-xs md:text-sm opacity-80">Средний доход</div>
+              <div className="text-xs opacity-60 mt-0.5">(на одного!)</div>
+            </div>
+
+            <div className="text-center">
+              <div className="text-3xl md:text-4xl font-black mb-2">{visits.toLocaleString()}</div>
+              <div className="text-xs md:text-sm opacity-80">Посещений</div>
+              <div className="text-xs opacity-60 mt-0.5">(сегодня уже +300)</div>
             </div>
           </div>
         </div>

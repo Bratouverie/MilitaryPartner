@@ -5,6 +5,7 @@ import HowYouGetMoneySection from "@/components/landing/HowYouGetMoneySection";
 import GuaranteesSection from "@/components/landing/GuaranteesSection";
 import FAQSection from "@/components/landing/FAQSection";
 import Footer from "@/components/landing/Footer";
+import AIConsultant from "@/components/landing/AIConsultant";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
@@ -178,6 +179,7 @@ export default function Home() {
 
       <FAQSection />
       <Footer />
+      <AIConsultant />
     </div>
   );
 }
