@@ -16,6 +16,7 @@ import {
 import { setStoredProfile } from "@/lib/profileSession";
 import { toast } from "@/components/ui/use-toast";
 import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA, getPublicTitle } from "@/lib/programUtils";
+import { joinFlowDiagnostics, STEPS } from "@/lib/joinFlowDiagnostics";
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -56,164 +57,214 @@ export default function RefLanding() {
   const handleGetCabinet = async () => {
     if (submitting) return;
     setSubmitting(true);
+    joinFlowDiagnostics.start();
 
-    // ШАГ 0: проверяем актуальный статус программы
-    let freshProgram = program;
     try {
+      // ШАГ 0: проверяем актуальный статус программы
+      joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, "Запрос программы по link_code");
       const progs = await base44.entities.ReferralProgram.filter({ link_code: code });
-      freshProgram = progs[0];
-      if (!freshProgram) { toast({ title: "Программа не найдена. Ссылка недействительна.", variant: "destructive" }); setSubmitting(false); return; }
+      const freshProgram = progs[0];
+
+      if (!freshProgram) {
+        joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, "Программа не найдена");
+        toast({ title: "Программа не найдена. Ссылка недействительна.", variant: "destructive" });
+        setSubmitting(false);
+        return;
+      }
+      joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, `Программа найдена: ${freshProgram.id}, статус: ${freshProgram.program_status}`);
+
       if (freshProgram.program_status && freshProgram.program_status !== "active") {
-        toast({ title: "Программа недоступна для новых участников (статус: " + freshProgram.program_status + ")", variant: "destructive" }); setSubmitting(false); return;
+        toast({ title: "Программа недоступна для новых участников.", variant: "destructive" });
+        setSubmitting(false);
+        return;
       }
       if (!freshProgram.is_active || freshProgram.is_archived) {
-        toast({ title: "Программа приостановлена.", variant: "destructive" }); setSubmitting(false); return;
+        toast({ title: "Программа приостановлена.", variant: "destructive" });
+        setSubmitting(false);
+        return;
       }
       if ((freshProgram.direct_children_count || 0) >= 10) {
-        toast({ title: "Программа достигла лимита участников (10).", variant: "destructive" }); setSubmitting(false); return;
+        toast({ title: "Программа достигла лимита участников (10).", variant: "destructive" });
+        setSubmitting(false);
+        return;
       }
       const childQuota = freshProgram.reward_quota || MIN_QUOTA;
       if (childQuota <= 0) {
-        toast({ title: "Некорректная квота программы.", variant: "destructive" }); setSubmitting(false); return;
+        toast({ title: "Некорректная квота программы.", variant: "destructive" });
+        setSubmitting(false);
+        return;
       }
-    } catch (e) {
-      console.error("[RefLanding] step0 validate:", e);
-      toast({ title: "Не удалось проверить программу. Попробуйте позже.", variant: "destructive" }); setSubmitting(false); return;
-    }
 
-    const childQuota = freshProgram.reward_quota || MIN_QUOTA;
-    const now = new Date().toISOString();
-    let secretCode, profileId;
+      const now = new Date().toISOString();
+      let secretCode, profileId, childProgram;
 
-    // ШАГ 1: генерируем уникальный секретный код
-    try {
+      // ШАГ 1: генерируем уникальный секретный код
+      joinFlowDiagnostics.step(STEPS.STEP1_GENCODE.name, "Генерация уникального кода");
       for (let i = 0; i < 8; i++) {
         secretCode = genSecretCode();
         const conflict = await base44.entities.ReferralProfile.filter({ secret_code: secretCode });
         if (conflict.length === 0) break;
       }
-    } catch (e) {
-      console.error("[RefLanding] step1 genCode:", e);
-      toast({ title: "Не удалось сгенерировать код. Попробуйте снова.", variant: "destructive" }); setSubmitting(false); return;
-    }
+      joinFlowDiagnostics.step(STEPS.STEP1_GENCODE.name, "Код успешно сгенерирован");
 
-    const maskedCode = maskCode(secretCode);
-    const referralCode = genRefCode();
+      const maskedCode = maskCode(secretCode);
+      const referralCode = genRefCode();
 
-    // ШАГ 2: создаём профиль БЕЗ контактных полей
-    let newProfile;
-    try {
-      newProfile = await base44.entities.ReferralProfile.create({
-        role: "referrer",
-        status: "active",
-        referral_code: referralCode,
-        secret_code: secretCode,
-        masked_secret_code: maskedCode,
-        secret_code_last_sent_at: now,
-        parent_user_id: freshProgram.owner_user_id,
-        level: "L0_novice",
-        total_earned: 0, total_paid: 0, total_pending: 0,
-        active_referrals_count: 0, total_candidates_count: 0,
-        referral_reward: childQuota,
-        personal_max_reward_snapshot: childQuota,
+      // ШАГ 2: создаём профиль БЕЗ контактных полей (email не требуется)
+      joinFlowDiagnostics.step(STEPS.STEP2_CREATE_PROFILE.name, "Создание ReferralProfile без email");
+      let newProfile;
+      try {
+        newProfile = await base44.entities.ReferralProfile.create({
+          role: "referrer",
+          status: "active",
+          referral_code: referralCode,
+          secret_code: secretCode,
+          masked_secret_code: maskedCode,
+          secret_code_last_sent_at: now,
+          parent_user_id: freshProgram.owner_user_id,
+          level: "L0_novice",
+          total_earned: 0,
+          total_paid: 0,
+          total_pending: 0,
+          active_referrals_count: 0,
+          total_candidates_count: 0,
+          referral_reward: childQuota,
+          personal_max_reward_snapshot: childQuota,
+        });
+        profileId = newProfile.id;
+        joinFlowDiagnostics.step(STEPS.STEP2_CREATE_PROFILE.name, `Профиль создан: ${profileId}`);
+      } catch (e) {
+        const result = joinFlowDiagnostics.error(STEPS.STEP2_CREATE_PROFILE.name, e, "откат");
+        console.error("[RefLanding] Диагностика:", result);
+        throw new Error(`Не удалось создать профиль: ${e.message}`);
+      }
+
+      // ШАГ 3: создаём дочернюю программу
+      joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Создание дочерней программы (owner: ${profileId})`);
+      try {
+        const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
+        let ancestryIds = [];
+        try {
+          ancestryIds = JSON.parse(freshProgram.ancestry_path_ids || "[]");
+        } catch {}
+        ancestryIds.push(freshProgram.id);
+
+        const baseProgramTitle = freshProgram.base_program_title || freshProgram.title || "";
+        const publicProgramTitle = baseProgramTitle;
+        const internalDisplayTitle = baseProgramTitle;
+
+        childProgram = await base44.entities.ReferralProgram.create({
+          title: internalDisplayTitle || "Новый партнёр",
+          base_program_title: baseProgramTitle,
+          child_prefix_title: "Новый партнёр",
+          internal_display_title: internalDisplayTitle,
+          public_program_title: publicProgramTitle,
+          link_code: linkCode,
+          candidate_form_code: formCode,
+          owner_user_id: profileId,
+          parent_program_id: freshProgram.id,
+          root_program_id: freshProgram.root_program_id || freshProgram.id,
+          root_master_link_id: freshProgram.root_master_link_id,
+          assigned_moderator_id: freshProgram.assigned_moderator_id,
+          reward_quota: childQuota,
+          parent_reward_quota: freshProgram.reward_quota,
+          depth: (freshProgram.depth || 0) + 1,
+          ancestry_path_ids: JSON.stringify(ancestryIds),
+          ancestry_path_text: (freshProgram.ancestry_path_text || baseProgramTitle) + " / Новый партнёр",
+          program_kind: "child",
+          program_status: "active",
+          is_root: false,
+          is_active: true,
+          is_archived: false,
+          can_create_child: childQuota > MIN_QUOTA,
+          direct_children_count: 0,
+          children_count: 0,
+          candidates_count: 0,
+          contracts_count: 0,
+          pending_rewards_sum: 0,
+          paid_rewards_sum: 0,
+          owner_program_level: 0,
+          region_code: freshProgram.region_code,
+          region_name: freshProgram.region_name,
+          program_category: freshProgram.program_category,
+        });
+        joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Подпрограмма создана: ${childProgram.id}`);
+        } catch (e) {
+        joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, "Откат: пометка профиля как неактивного");
+        // Rollback: помечаем профиль как неактивный
+        await base44.entities.ReferralProfile.update(profileId, { status: "inactive" }).catch(err => {
+          console.error("[RefLanding] rollback ошибка:", err);
+        });
+        const result = joinFlowDiagnostics.error(STEPS.STEP3_CREATE_PROGRAM.name, e, `профиль ${profileId} помечен как inactive`);
+        console.error("[RefLanding] Диагностика:", result);
+        throw new Error(`Не удалось создать подпрограмму: ${e.message}`);
+        }
+
+      // ШАГ 4: ProgramMembership (некритично)
+      joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, "Создание ProgramMembership");
+      try {
+        await base44.entities.ProgramMembership.create({
+          user_id: profileId,
+          program_id: childProgram.id,
+          membership_role: "owner",
+          membership_status: "active",
+          source_join_type: "referral_link",
+          source_program_id: freshProgram.id,
+          joined_at: now,
+        });
+        joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, "Членство создано");
+      } catch (e) {
+        joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, `Некритичная ошибка: ${e.message}`);
+      }
+
+      // ШАГ 5: обновляем счётчики родителя (некритично)
+      joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, "Обновление счётчиков родителя");
+      try {
+        await base44.entities.ReferralProgram.update(freshProgram.id, {
+          direct_children_count: (freshProgram.direct_children_count || 0) + 1,
+          children_count: (freshProgram.children_count || 0) + 1,
+        });
+        joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, "Счётчики обновлены");
+      } catch (e) {
+        joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, `Некритичная ошибка: ${e.message}`);
+      }
+
+      // ШАГ 6: ActionLog (некритично)
+      joinFlowDiagnostics.step(STEPS.STEP6_LOG.name, "Создание записи в журнал");
+      base44.entities.ActionLog.create({
+        action_type: "PROFILE_CREATED_FROM_PROGRAM_LINK",
+        entity_type: "ReferralProfile",
+        entity_id: profileId,
+        action_payload: JSON.stringify({
+          link_code: code,
+          parent_program_id: freshProgram.id,
+          child_program_id: childProgram.id,
+          quota: childQuota,
+          note: "без_контактных_данных_заполнит_позже",
+        }),
+      }).catch(e => {
+        joinFlowDiagnostics.step(STEPS.STEP6_LOG.name, `Некритичная ошибка: ${e.message}`);
       });
-      profileId = newProfile.id;
-    } catch (e) {
-      console.error("[RefLanding] step2 createProfile:", e);
-      toast({ title: "Не удалось создать профиль. Попробуйте снова.", variant: "destructive" }); setSubmitting(false); return;
-    }
 
-    // ШАГ 3: создаём дочернюю программу
-    let childProg;
-    try {
-      const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
-      let ancestryIds = [];
-      try { ancestryIds = JSON.parse(freshProgram.ancestry_path_ids || "[]"); } catch {}
-      ancestryIds.push(freshProgram.id);
+      // ШАГ 7: устанавливаем сессию и показываем код
+      joinFlowDiagnostics.step(STEPS.STEP7_SESSION.name, "Сохранение сессии");
+      setStoredProfile({ ...newProfile, secret_code: secretCode });
+      setCreatedProfile({ ...newProfile, secret_code: secretCode, masked_secret_code: maskedCode });
+      setDone(true);
 
-      const baseProgramTitle = freshProgram.base_program_title || freshProgram.title || "";
-      const publicProgramTitle = baseProgramTitle;
-      const internalDisplayTitle = baseProgramTitle;
-
-      childProg = await base44.entities.ReferralProgram.create({
-         title: internalDisplayTitle || "Новый партнёр",
-         base_program_title: baseProgramTitle,
-         child_prefix_title: "Новый партнёр",
-         internal_display_title: internalDisplayTitle,
-         public_program_title: publicProgramTitle,
-        link_code: linkCode,
-        candidate_form_code: formCode,
-        owner_user_id: profileId,
-        parent_program_id: freshProgram.id,
-        root_program_id: freshProgram.root_program_id || freshProgram.id,
-        root_master_link_id: freshProgram.root_master_link_id,
-        assigned_moderator_id: freshProgram.assigned_moderator_id,
-        reward_quota: childQuota,
-        parent_reward_quota: freshProgram.reward_quota,
-        depth: (freshProgram.depth || 0) + 1,
-        ancestry_path_ids: JSON.stringify(ancestryIds),
-        ancestry_path_text: (freshProgram.ancestry_path_text || baseProgramTitle) + " / Новый партнёр",
-        program_kind: "child",
-        program_status: "active",
-        is_root: false, is_active: true, is_archived: false,
-        can_create_child: childQuota > MIN_QUOTA,
-        direct_children_count: 0, children_count: 0, candidates_count: 0,
-        contracts_count: 0, pending_rewards_sum: 0, paid_rewards_sum: 0,
-        owner_program_level: 0,
-        region_code: freshProgram.region_code,
-        region_name: freshProgram.region_name,
-        program_category: freshProgram.program_category,
+      const report = joinFlowDiagnostics.success("Кабинет успешно создан!");
+      console.log("[RefLanding] Полный отчёт:", report);
+    } catch (error) {
+      const report = joinFlowDiagnostics.error("UNKNOWN", error);
+      console.error("[RefLanding] Финальный отчёт об ошибке:", report);
+      toast({
+        title: "Не удалось создать кабинет",
+        description: "Попробуйте позже или обратитесь в поддержку.",
+        variant: "destructive",
       });
-    } catch (e) {
-      console.error("[RefLanding] step3 createChildProgram:", e);
-      // Rollback: помечаем профиль как неполный
-      base44.entities.ReferralProfile.update(profileId, { status: "inactive" }).catch(() => {});
-      toast({ title: "Не удалось создать подпрограмму. Попробуйте снова.", variant: "destructive" }); setSubmitting(false); return;
+    } finally {
+      setSubmitting(false);
     }
-
-    // ШАГ 4: ProgramMembership
-    try {
-      await base44.entities.ProgramMembership.create({
-        user_id: profileId,
-        program_id: childProg.id,
-        membership_role: "owner",
-        membership_status: "active",
-        source_join_type: "referral_link",
-        source_program_id: freshProgram.id,
-        joined_at: now,
-      });
-    } catch (e) {
-      console.error("[RefLanding] step4 membership (non-critical):", e);
-      // Не блокируем — membership некритична для входа
-    }
-
-    // ШАГ 5: обновляем счётчики родителя
-    try {
-      await base44.entities.ReferralProgram.update(freshProgram.id, {
-        direct_children_count: (freshProgram.direct_children_count || 0) + 1,
-        children_count: (freshProgram.children_count || 0) + 1,
-      });
-    } catch (e) {
-      console.error("[RefLanding] step5 updateParent (non-critical):", e);
-    }
-
-    // ШАГ 6: ActionLog (некритично)
-    base44.entities.ActionLog.create({
-      action_type: "PROFILE_CREATED_FROM_PROGRAM_LINK",
-      entity_type: "ReferralProfile",
-      entity_id: profileId,
-      action_payload: JSON.stringify({
-        link_code: code, parent_program_id: freshProgram.id,
-        child_program_id: childProg.id, quota: childQuota,
-        note: "без_контактных_данных_заполнит_позже"
-      }),
-    }).catch(() => {});
-
-    // ШАГ 7: устанавливаем сессию и показываем код
-    setStoredProfile({ ...newProfile, secret_code: secretCode });
-    setCreatedProfile({ ...newProfile, secret_code: secretCode, masked_secret_code: maskedCode });
-    setDone(true);
-    setSubmitting(false);
   };
 
   const handleCopy = async () => {
