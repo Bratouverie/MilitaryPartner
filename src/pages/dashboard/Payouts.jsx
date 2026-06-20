@@ -27,7 +27,10 @@ export default function Payouts() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    recipient_name: "", payment_method: "bank_transfer",
+    recipient_name: "", date_of_birth: "", passport_series: "", passport_number: "", 
+    passport_issued_by: "", passport_issued_date: "", passport_subdivision_code: "", 
+    registration_address: "", inn: "", snils: "",
+    payment_method: "bank_transfer",
     bank_name: "", bik: "", account_number: "", card_number: "", phone_for_sbp: ""
   });
 
@@ -36,25 +39,37 @@ export default function Payouts() {
     setLoading(true);
     base44.entities.PaymentProfile.filter({ user_id: profile.id }).then(pp => {
       if (pp[0]) {
-        const p = pp[0];
-        setPaymentProfile(p);
-        setForm({
-          recipient_name: p.recipient_name || "",
-          payment_method: p.payment_method || "bank_transfer",
-          bank_name: p.bank_name || "",
-          bik: p.bik || "",
-          account_number: p.account_number || "",
-          card_number: p.card_number || "",
-          phone_for_sbp: p.phone_for_sbp || "",
-        });
-      }
+         const p = pp[0];
+         setPaymentProfile(p);
+         setForm({
+           recipient_name: p.recipient_name || "",
+           date_of_birth: p.date_of_birth || "",
+           passport_series: p.passport_series || "",
+           passport_number: p.passport_number || "",
+           passport_issued_by: p.passport_issued_by || "",
+           passport_issued_date: p.passport_issued_date || "",
+           passport_subdivision_code: p.passport_subdivision_code || "",
+           registration_address: p.registration_address || "",
+           inn: p.inn || "",
+           snils: p.snils || "",
+           payment_method: p.payment_method || "bank_transfer",
+           bank_name: p.bank_name || "",
+           bik: p.bik || "",
+           account_number: p.account_number || "",
+           card_number: p.card_number || "",
+           phone_for_sbp: p.phone_for_sbp || "",
+         });
+       }
       setLoading(false);
     });
   }, [profile?.id]);
 
   const handleSave = async () => {
-    if (!form.recipient_name.trim()) { toast({ title: "Заполните ФИО получателя", variant: "destructive" }); return; }
-    setSaving(true);
+     if (!form.recipient_name.trim()) { toast({ title: "Заполните ФИО получателя", variant: "destructive" }); return; }
+     if (!form.date_of_birth) { toast({ title: "Заполните дату рождения", variant: "destructive" }); return; }
+     if (!form.passport_series || !form.passport_number) { toast({ title: "Заполните номер паспорта", variant: "destructive" }); return; }
+     if (!form.registration_address.trim()) { toast({ title: "Заполните адрес регистрации", variant: "destructive" }); return; }
+     setSaving(true);
     try {
       const data = { ...form, verification_status: "pending_review" };
       if (paymentProfile) {
@@ -108,11 +123,52 @@ export default function Payouts() {
         </p>
       </div>
 
-      <div className="bg-card border border-border rounded-2xl p-6 max-w-xl space-y-5">
-        <div>
-          <Label>ФИО получателя *</Label>
-          <Input value={form.recipient_name} onChange={e => setForm(f => ({ ...f, recipient_name: e.target.value }))} placeholder="Иванов Иван Иванович" disabled={isApproved} className="mt-1" />
-        </div>
+      <div className="bg-card border border-border rounded-2xl p-6 max-w-2xl space-y-5">
+         <div className="border-b pb-4 mb-4">
+           <h3 className="font-bold text-base mb-3">Паспортные данные</h3>
+           <div className="grid md:grid-cols-2 gap-4">
+             <div>
+               <Label>ФИО получателя *</Label>
+               <Input value={form.recipient_name} onChange={e => setForm(f => ({ ...f, recipient_name: e.target.value }))} placeholder="Иванов Иван Иванович" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Дата рождения *</Label>
+               <Input type="date" value={form.date_of_birth} onChange={e => setForm(f => ({ ...f, date_of_birth: e.target.value }))} disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Серия паспорта *</Label>
+               <Input value={form.passport_series} onChange={e => setForm(f => ({ ...f, passport_series: e.target.value }))} placeholder="1234" maxLength="4" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Номер паспорта *</Label>
+               <Input value={form.passport_number} onChange={e => setForm(f => ({ ...f, passport_number: e.target.value }))} placeholder="567890" maxLength="6" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Кем выдан</Label>
+               <Input value={form.passport_issued_by} onChange={e => setForm(f => ({ ...f, passport_issued_by: e.target.value }))} placeholder="УФМС по Москве" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Дата выдачи</Label>
+               <Input type="date" value={form.passport_issued_date} onChange={e => setForm(f => ({ ...f, passport_issued_date: e.target.value }))} disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Код подразделения</Label>
+               <Input value={form.passport_subdivision_code} onChange={e => setForm(f => ({ ...f, passport_subdivision_code: e.target.value }))} placeholder="770-001" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>Адрес регистрации *</Label>
+               <Input value={form.registration_address} onChange={e => setForm(f => ({ ...f, registration_address: e.target.value }))} placeholder="г. Москва, ул. Примерная, дом 1" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>ИНН</Label>
+               <Input value={form.inn} onChange={e => setForm(f => ({ ...f, inn: e.target.value }))} placeholder="773123456789" maxLength="12" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+             <div>
+               <Label>СНИЛС</Label>
+               <Input value={form.snils} onChange={e => setForm(f => ({ ...f, snils: e.target.value }))} placeholder="123-456-789-01" disabled={isApproved} className="mt-1 text-sm" />
+             </div>
+           </div>
+         </div>
 
         <div>
           <Label>Способ выплаты *</Label>

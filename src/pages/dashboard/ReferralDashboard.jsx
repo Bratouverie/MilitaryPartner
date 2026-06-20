@@ -2,23 +2,33 @@ import React, { useState, useEffect } from "react";
 import { useProfile } from "@/lib/useProfile";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
-import { Copy, Share2, Send, Eye, EyeOff, Download } from "lucide-react";
+import { Copy, Share2, Send, Eye, EyeOff, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { useActiveInviteProgram } from "@/lib/useActiveInviteProgram";
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
+  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getTelegramShareUrl } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
-  const [referralLink, setReferralLink] = useState("");
+  const [creatingInvite, setCreatingInvite] = useState(false);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
+  const referralLink = inviteLink;
 
   useEffect(() => {
-    if (profile?.id) {
-      // Генерируем реферальную ссылку
-      const link = `${window.location.origin}/join/${profile.referral_code}`;
-      setReferralLink(link);
-      loadStats();
-    }
-  }, [profile]);
+    if (profile?.id) loadStats();
+  }, [profile?.id]);
+
+  const handleCreateInvite = async () => {
+    setCreatingInvite(true);
+    try {
+      const owned = await base44.entities.ReferralProgram.filter({ owner_user_id: profile?.id });
+      const parent = owned.find(p => !p.parent_program_id || p.program_kind !== "child");
+      if (!parent) { toast({ title: "Нет родительской программы", variant: "destructive" }); return; }
+      const { program, error } = await createInviteProgram(parent);
+      if (program) toast({ title: "✓ Программа приглашения создана!" });
+      else toast({ title: error || "Ошибка создания программы", variant: "destructive" });
+    } finally { setCreatingInvite(false); }
+  };
 
   const loadStats = async () => {
     try {
@@ -70,14 +80,13 @@ export default function ReferralDashboard() {
   };
 
   const handleTelegram = () => {
-    const message = `🎖️ Работаю в МилитариПартнер.\nЗа каждого кандидата платят от 50K до 200K ₽.\n${referralLink}`;
-    window.open(
-      `https://t.me/share/url?url=${encodeURIComponent(referralLink)}&text=${encodeURIComponent(message)}`
-    );
+    const shareUrl = getTelegramShareUrl();
+    if (!shareUrl) { toast({ title: "Ссылка приглашения не готова", variant: "destructive" }); return; }
+    window.open(shareUrl);
   };
 
-  if (loading) {
-    return <div className="p-8 text-center">Загрузка...</div>;
+  if (loading || inviteLoading) {
+    return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>;
   }
 
   return (
@@ -105,33 +114,36 @@ export default function ReferralDashboard() {
                 <h2 className="font-black text-2xl md:text-3xl text-primary-foreground mb-2">
                   🔗 ПРИГЛАСИТЬ РЕФЕРАЛОВ
                 </h2>
-                <p className="text-sm md:text-base text-primary-foreground/90">
-                  Твоя ссылка:{" "}
-                  <code className="bg-black/20 px-2 py-1 rounded text-xs md:text-sm">
-                    {referralLink.slice(-20)}...
-                  </code>
-                </p>
+                {referralLink ? (
+                  <p className="text-xs md:text-sm text-primary-foreground/90 font-mono bg-black/20 px-2 py-1 rounded break-all">
+                    {referralLink}
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-300 text-sm">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    Ссылка приглашения не создана — нажмите кнопку ниже
+                  </div>
+                )}
               </div>
               <div className="flex gap-2 flex-wrap mt-3">
-                <Button
-                  onClick={handleCopyLink}
-                  size="sm"
-                  className="bg-white/20 hover:bg-white/30 text-primary-foreground text-xs md:text-sm"
-                >
-                  <Copy className="w-3 h-3 md:w-4 md:h-4 mr-1" />
-                  Скопировать
-                </Button>
-                <Button
-                  onClick={handleShare}
-                  size="sm"
-                  className="bg-white/20 hover:bg-white/30 text-primary-foreground text-xs md:text-sm"
-                >
-                  <Share2 className="w-3 h-3 md:w-4 md:h-4 mr-1" />
-                  Поделиться
-                </Button>
+                {referralLink ? (
+                  <>
+                    <Button onClick={handleCopyLink} size="sm" className="bg-white/20 hover:bg-white/30 text-primary-foreground text-xs">
+                      <Copy className="w-3 h-3 mr-1" />Скопировать
+                    </Button>
+                    <Button onClick={handleShare} size="sm" className="bg-white/20 hover:bg-white/30 text-primary-foreground text-xs">
+                      <Share2 className="w-3 h-3 mr-1" />Поделиться
+                    </Button>
+                  </>
+                ) : (
+                  <Button onClick={handleCreateInvite} disabled={creatingInvite} size="sm" className="bg-accent text-accent-foreground font-bold text-xs">
+                    {creatingInvite ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                    Создать ссылку приглашения
+                  </Button>
+                )}
               </div>
               <div className="mt-2 text-sm text-primary-foreground/80">
-                За каждого: 50 000 - 200 000 ₽
+                За каждого партнёра: 50 000 – 200 000 ₽
               </div>
             </div>
           </div>

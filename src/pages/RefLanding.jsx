@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { setStoredProfile } from "@/lib/profileSession";
 import { toast } from "@/components/ui/use-toast";
-import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA, getPublicTitle } from "@/lib/programUtils";
+import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA, getPublicTitle, createDefaultInviteSubprogram } from "@/lib/programUtils";
 import { joinFlowDiagnostics, STEPS } from "@/lib/joinFlowDiagnostics";
 
 const genSecretCode = () => {
@@ -139,56 +139,15 @@ export default function RefLanding() {
         throw new Error(`Не удалось создать профиль: ${e.message}`);
       }
 
-      // ШАГ 3: создаём дочернюю программу
-      joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Создание дочерней программы (owner: ${profileId})`);
-      try {
-        const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
-        let ancestryIds = [];
-        try {
-          ancestryIds = JSON.parse(freshProgram.ancestry_path_ids || "[]");
-        } catch {}
-        ancestryIds.push(freshProgram.id);
-
-        const baseProgramTitle = freshProgram.base_program_title || freshProgram.title || "";
-        const publicProgramTitle = baseProgramTitle;
-        const internalDisplayTitle = baseProgramTitle;
-
-        childProgram = await base44.entities.ReferralProgram.create({
-          title: internalDisplayTitle || "Новый партнёр",
-          base_program_title: baseProgramTitle,
-          child_prefix_title: "Новый партнёр",
-          internal_display_title: internalDisplayTitle,
-          public_program_title: publicProgramTitle,
-          link_code: linkCode,
-          candidate_form_code: formCode,
-          owner_user_id: profileId,
-          parent_program_id: freshProgram.id,
-          root_program_id: freshProgram.root_program_id || freshProgram.id,
-          root_master_link_id: freshProgram.root_master_link_id,
-          assigned_moderator_id: freshProgram.assigned_moderator_id,
-          reward_quota: childQuota,
-          parent_reward_quota: freshProgram.reward_quota,
-          depth: (freshProgram.depth || 0) + 1,
-          ancestry_path_ids: JSON.stringify(ancestryIds),
-          ancestry_path_text: (freshProgram.ancestry_path_text || baseProgramTitle) + " / Новый партнёр",
-          program_kind: "child",
-          program_status: "active",
-          is_root: false,
-          is_active: true,
-          is_archived: false,
-          can_create_child: childQuota > MIN_QUOTA,
-          direct_children_count: 0,
-          children_count: 0,
-          candidates_count: 0,
-          contracts_count: 0,
-          pending_rewards_sum: 0,
-          paid_rewards_sum: 0,
-          owner_program_level: 0,
-          region_code: freshProgram.region_code,
-          region_name: freshProgram.region_name,
-          program_category: freshProgram.program_category,
-        });
-        joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Подпрограмма создана: ${childProgram.id}`);
+      // ШАГ 3: создаём первую подпрограмму приглашения (50% квоты, кратно 5000)
+       joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, "Создание первой подпрограммы приглашения (50% квоты)");
+       try {
+         const { program: inviteProgram, error: inviteError } = await createDefaultInviteSubprogram(freshProgram, profileId);
+         if (!inviteProgram) {
+           throw new Error(inviteError || "Не удалось создать подпрограмму приглашения");
+         }
+         childProgram = inviteProgram;
+         joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Подпрограмма создана: ${childProgram.id}, квота: ${childProgram.reward_quota}`);
         } catch (e) {
         joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, "Откат: пометка профиля как неактивного");
         // Rollback: помечаем профиль как неактивный

@@ -293,6 +293,33 @@ export async function createChildProgram({ parentProgram, title: childPrefixTitl
  *
  * @param {{ originProgram, ownerUserId, newTitle, newQuota, actorUserId, moderatorId, regionCode, regionName, programCategory }}
  */
+/**
+ * Создаёт первую подпрограмму приглашения по умолчанию (50% квоты от родителя).
+ * Квота округляется вниз до кратности 5000 и строго >= 5000 и < родительской.
+ */
+export async function createDefaultInviteSubprogram(parentProgram, ownerUserId) {
+  if (!parentProgram) return { program: null, error: "Parent program required" };
+  
+  const parentQuota = parentProgram.reward_quota || MIN_QUOTA;
+  let childQuota = Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP; // 50%, вниз до 5000
+  
+  // Edge case: маленькая квота не позволяет создать child
+  if (childQuota < MIN_QUOTA || childQuota >= parentQuota) {
+    childQuota = Math.max(MIN_QUOTA, parentQuota - QUOTA_STEP); // берём на шаг меньше
+    if (childQuota >= parentQuota || childQuota < MIN_QUOTA) {
+      return { program: null, error: `Cannot create default invite: parent quota too small (${parentQuota})` };
+    }
+  }
+
+  return createChildProgram({
+    parentProgram,
+    title: "Активная программа приглашения",
+    childQuota,
+    ownerUserId,
+    actorUserId: "system",
+  });
+}
+
 export async function createPromotedRootProgram({
   originProgram, ownerUserId, newTitle, newQuota, actorUserId,
   moderatorId, regionCode, regionName, programCategory
