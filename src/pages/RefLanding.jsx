@@ -57,167 +57,29 @@ export default function RefLanding() {
   const handleGetCabinet = async () => {
     if (submitting) return;
     setSubmitting(true);
-    joinFlowDiagnostics.start();
 
     try {
-      // ШАГ 0: проверяем актуальный статус программы
-      joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, "Запрос программы по link_code");
-      const progs = await base44.entities.ReferralProgram.filter({ link_code: code });
-      const freshProgram = progs[0];
-
-      if (!freshProgram) {
-        joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, "Программа не найдена");
-        toast({ title: "Программа не найдена. Ссылка недействительна.", variant: "destructive" });
-        setSubmitting(false);
-        return;
-      }
-      joinFlowDiagnostics.step(STEPS.STEP0_VALIDATE.name, `Программа найдена: ${freshProgram.id}, статус: ${freshProgram.program_status}`);
-
-      if (freshProgram.program_status && freshProgram.program_status !== "active") {
-        toast({ title: "Программа недоступна для новых участников.", variant: "destructive" });
-        setSubmitting(false);
-        return;
-      }
-      if (!freshProgram.is_active || freshProgram.is_archived) {
-        toast({ title: "Программа приостановлена.", variant: "destructive" });
-        setSubmitting(false);
-        return;
-      }
-      if ((freshProgram.direct_children_count || 0) >= 10) {
-        toast({ title: "Программа достигла лимита участников (10).", variant: "destructive" });
-        setSubmitting(false);
-        return;
-      }
-      const childQuota = freshProgram.reward_quota || MIN_QUOTA;
-      if (childQuota <= 0) {
-        toast({ title: "Некорректная квота программы.", variant: "destructive" });
-        setSubmitting(false);
-        return;
-      }
-
-      const now = new Date().toISOString();
-      let secretCode, profileId, childProgram;
-
-      // ШАГ 1: генерируем уникальный секретный код
-      joinFlowDiagnostics.step(STEPS.STEP1_GENCODE.name, "Генерация уникального кода");
-      for (let i = 0; i < 8; i++) {
-        secretCode = genSecretCode();
-        const conflict = await base44.entities.ReferralProfile.filter({ secret_code: secretCode });
-        if (conflict.length === 0) break;
-      }
-      joinFlowDiagnostics.step(STEPS.STEP1_GENCODE.name, "Код успешно сгенерирован");
-
-      const maskedCode = maskCode(secretCode);
-      const referralCode = genRefCode();
-
-      // ШАГ 2: создаём профиль БЕЗ контактных полей (email не требуется)
-      joinFlowDiagnostics.step(STEPS.STEP2_CREATE_PROFILE.name, "Создание ReferralProfile без email");
-      let newProfile;
-      try {
-        newProfile = await base44.entities.ReferralProfile.create({
-          role: "referrer",
-          status: "active",
-          referral_code: referralCode,
-          secret_code: secretCode,
-          masked_secret_code: maskedCode,
-          secret_code_last_sent_at: now,
-          parent_user_id: freshProgram.owner_user_id,
-          level: "L0_novice",
-          total_earned: 0,
-          total_paid: 0,
-          total_pending: 0,
-          active_referrals_count: 0,
-          total_candidates_count: 0,
-          referral_reward: childQuota,
-          personal_max_reward_snapshot: childQuota,
+      // Вызываем безопасный server-side join-flow
+      const res = await base44.functions.invoke('safeJoinFlow', { linkCode: code });
+      
+      if (!res.data?.success) {
+        toast({
+          title: "Не удалось создать кабинет",
+          description: res.data?.error || "Неизвестная ошибка",
+          variant: "destructive",
         });
-        profileId = newProfile.id;
-        joinFlowDiagnostics.step(STEPS.STEP2_CREATE_PROFILE.name, `Профиль создан: ${profileId}`);
-      } catch (e) {
-        const result = joinFlowDiagnostics.error(STEPS.STEP2_CREATE_PROFILE.name, e, "откат");
-        console.error("[RefLanding] Диагностика:", result);
-        throw new Error(`Не удалось создать профиль: ${e.message}`);
+        setSubmitting(false);
+        return;
       }
 
-      // ШАГ 3: создаём первую подпрограмму приглашения (50% квоты, кратно 5000)
-       joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, "Создание первой подпрограммы приглашения (50% квоты)");
-       try {
-         const { program: inviteProgram, error: inviteError } = await createDefaultInviteSubprogram(freshProgram, profileId);
-         if (!inviteProgram) {
-           throw new Error(inviteError || "Не удалось создать подпрограмму приглашения");
-         }
-         childProgram = inviteProgram;
-         joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, `Подпрограмма создана: ${childProgram.id}, квота: ${childProgram.reward_quota}`);
-        } catch (e) {
-        joinFlowDiagnostics.step(STEPS.STEP3_CREATE_PROGRAM.name, "Откат: пометка профиля как неактивного");
-        // Rollback: помечаем профиль как неактивный
-        await base44.entities.ReferralProfile.update(profileId, { status: "inactive" }).catch(err => {
-          console.error("[RefLanding] rollback ошибка:", err);
-        });
-        const result = joinFlowDiagnostics.error(STEPS.STEP3_CREATE_PROGRAM.name, e, `профиль ${profileId} помечен как inactive`);
-        console.error("[RefLanding] Диагностика:", result);
-        throw new Error(`Не удалось создать подпрограмму: ${e.message}`);
-        }
-
-      // ШАГ 4: ProgramMembership (некритично)
-      joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, "Создание ProgramMembership");
-      try {
-        await base44.entities.ProgramMembership.create({
-          user_id: profileId,
-          program_id: childProgram.id,
-          membership_role: "owner",
-          membership_status: "active",
-          source_join_type: "referral_link",
-          source_program_id: freshProgram.id,
-          joined_at: now,
-        });
-        joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, "Членство создано");
-      } catch (e) {
-        joinFlowDiagnostics.step(STEPS.STEP4_MEMBERSHIP.name, `Некритичная ошибка: ${e.message}`);
-      }
-
-      // ШАГ 5: обновляем счётчики родителя (некритично)
-      joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, "Обновление счётчиков родителя");
-      try {
-        await base44.entities.ReferralProgram.update(freshProgram.id, {
-          direct_children_count: (freshProgram.direct_children_count || 0) + 1,
-          children_count: (freshProgram.children_count || 0) + 1,
-        });
-        joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, "Счётчики обновлены");
-      } catch (e) {
-        joinFlowDiagnostics.step(STEPS.STEP5_COUNTERS.name, `Некритичная ошибка: ${e.message}`);
-      }
-
-      // ШАГ 6: ActionLog (некритично)
-      joinFlowDiagnostics.step(STEPS.STEP6_LOG.name, "Создание записи в журнал");
-      base44.entities.ActionLog.create({
-        action_type: "PROFILE_CREATED_FROM_PROGRAM_LINK",
-        entity_type: "ReferralProfile",
-        entity_id: profileId,
-        action_payload: JSON.stringify({
-          link_code: code,
-          parent_program_id: freshProgram.id,
-          child_program_id: childProgram.id,
-          quota: childQuota,
-          note: "без_контактных_данных_заполнит_позже",
-        }),
-      }).catch(e => {
-        joinFlowDiagnostics.step(STEPS.STEP6_LOG.name, `Некритичная ошибка: ${e.message}`);
-      });
-
-      // ШАГ 7: устанавливаем сессию и показываем код
-      joinFlowDiagnostics.step(STEPS.STEP7_SESSION.name, "Сохранение сессии");
-      setStoredProfile({ ...newProfile, secret_code: secretCode });
-      setCreatedProfile({ ...newProfile, secret_code: secretCode, masked_secret_code: maskedCode });
+      const { profile: createdProfile, childProgram } = res.data;
+      setStoredProfile(createdProfile);
+      setCreatedProfile(createdProfile);
       setDone(true);
-
-      const report = joinFlowDiagnostics.success("Кабинет успешно создан!");
-      console.log("[RefLanding] Полный отчёт:", report);
     } catch (error) {
-      const report = joinFlowDiagnostics.error("UNKNOWN", error);
-      console.error("[RefLanding] Финальный отчёт об ошибке:", report);
+      console.error("[RefLanding] Join flow error:", error);
       toast({
-        title: "Не удалось создать кабинет",
+        title: "Ошибка создания кабинета",
         description: "Попробуйте позже или обратитесь в поддержку.",
         variant: "destructive",
       });
