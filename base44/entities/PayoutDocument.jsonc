@@ -1,0 +1,42 @@
+{
+  "name": "PayoutDocument",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "ID \u0440\u0435\u0444\u0435\u0440\u0430\u043b\u0430 (ReferralProfile)"
+    },
+    "payment_profile_id": {
+      "type": "string"
+    },
+    "document_type": {
+      "type": "string",
+      "enum": [
+        "contract",
+        "invoice",
+        "act",
+        "other"
+      ],
+      "default": "act"
+    },
+    "file_url": {
+      "type": "string"
+    },
+    "document_status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "generated",
+        "approved",
+        "rejected"
+      ],
+      "default": "draft"
+    },
+    "admin_comment": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id"
+  ]
+}

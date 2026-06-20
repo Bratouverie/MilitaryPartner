@@ -1,29 +1,21 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import PublicHeader from "@/components/landing/PublicHeader";
 import Footer from "@/components/landing/Footer";
-import { Shield, Eye, Clock, CheckCircle, Lock, ArrowRight } from "lucide-react";
+import { Eye, Clock, CheckCircle, Lock, ArrowRight } from "lucide-react";
 
 const guarantees = [
   { icon: Eye, title: "Полная прозрачность", desc: "Каждый статус вашего кандидата и каждая выплата видны в личном кабинете в реальном времени." },
   { icon: Clock, title: "Выплата в 7 дней", desc: "После подтверждения прибытия кандидата деньги поступают на ваш счёт в течение 7 рабочих дней." },
-  { icon: CheckCircle, title: "Ручная верификация", desc: "Каждая награда проходит проверку администратором. Это защищает от ошибок и гарантирует точность." },
-  { icon: Lock, title: "Безопасность данных", desc: "Все данные передаются по защищённому каналу. Чувствительная информация скрыта и доступна только авторизованным пользователям." },
+  { icon: CheckCircle, title: "Ручная верификация", desc: "Каждая награда проходит проверку администратором. Это гарантирует точность и исключает ошибки." },
+  { icon: Lock, title: "Безопасность данных", desc: "Все данные передаются по защищённому каналу. Секретный код используется вместо пароля." },
 ];
 
 export default function Guarantees() {
   return (
     <div className="min-h-screen">
-      <header className="bg-primary py-4 px-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <Shield className="w-6 h-6 text-accent" />
-            <span className="font-display font-bold text-xl text-primary-foreground">МилитариПартнер</span>
-          </Link>
-          <Link to="/login"><Button variant="outline" size="sm" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">Вход</Button></Link>
-        </div>
-      </header>
-
+      <PublicHeader />
       <section className="py-20 bg-background">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="font-heading text-4xl md:text-5xl font-bold text-center mb-4">Гарантии и выплаты</h1>

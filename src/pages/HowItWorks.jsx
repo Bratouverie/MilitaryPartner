@@ -1,34 +1,25 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import PublicHeader from "@/components/landing/PublicHeader";
 import Footer from "@/components/landing/Footer";
-import { UserPlus, LinkIcon, FileText, Banknote, ArrowRight, Shield } from "lucide-react";
+import { UserPlus, LinkIcon, FileText, Banknote, ArrowRight } from "lucide-react";
 
 const steps = [
-  { icon: UserPlus, title: "Зарегистрируйся", desc: "Заполни короткую форму, укажи контакты и выбери сумму вознаграждения за каждого кандидата. Получи персональный секретный код для входа." },
-  { icon: LinkIcon, title: "Получи персональную ссылку", desc: "После регистрации тебе будет присвоена уникальная реферальная ссылка. Делись ей в мессенджерах, соцсетях и лично." },
-  { icon: FileText, title: "Кандидат заполняет анкету", desc: "Кандидат переходит по ссылке, видит информацию о контракте и заполняет короткую анкету. Куратор связывается в течение 4 часов." },
-  { icon: Banknote, title: "Получи выплату", desc: "После подтверждённого прибытия кандидата награда начисляется на твой счёт. Вся история выплат видна в личном кабинете." },
+  { icon: UserPlus, title: "Зарегистрируйся", desc: "Укажи только email — аккаунт создаётся мгновенно. Сразу получаешь секретный код для входа." },
+  { icon: LinkIcon, title: "Получи персональную ссылку", desc: "Сразу после регистрации — уникальная реферальная ссылка. Делись ею в мессенджерах и соцсетях." },
+  { icon: FileText, title: "Кандидат заполняет анкету", desc: "Кандидат переходит по ссылке и заполняет короткую форму. Куратор свяжется в течение 4 часов." },
+  { icon: Banknote, title: "Получи выплату", desc: "После подтверждённого прибытия кандидата награда начисляется и выплачивается в течение 7 дней." },
 ];
 
 export default function HowItWorks() {
   return (
     <div className="min-h-screen">
-      <header className="bg-primary py-4 px-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
-            <Shield className="w-6 h-6 text-accent" />
-            <span className="font-display font-bold text-xl text-primary-foreground">МилитариПартнер</span>
-          </Link>
-          <Link to="/login"><Button variant="outline" size="sm" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">Вход</Button></Link>
-        </div>
-      </header>
-
+      <PublicHeader />
       <section className="py-20 bg-background">
         <div className="max-w-4xl mx-auto px-4">
           <h1 className="font-heading text-4xl md:text-5xl font-bold text-center mb-4">Как это работает</h1>
           <p className="text-muted-foreground text-center text-lg mb-16">4 простых шага от регистрации до выплаты</p>
-
           <div className="space-y-8">
             {steps.map((step, i) => (
               <div key={i} className="flex gap-6 items-start">
@@ -43,7 +34,6 @@ export default function HowItWorks() {
               </div>
             ))}
           </div>
-
           <div className="mt-16 text-center">
             <Link to="/register-referrer">
               <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold text-lg px-8 h-14 rounded-xl">

@@ -6,24 +6,30 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
-import ProtectedRoute from '@/components/ProtectedRoute';
+import RoleGuard from '@/components/RoleGuard';
 
-import Login from '@/pages/Login';
-import Register from '@/pages/Register';
-import ForgotPassword from '@/pages/ForgotPassword';
-import ResetPassword from '@/pages/ResetPassword';
-
+// Public pages
 import Home from '@/pages/Home';
 import HowItWorks from '@/pages/HowItWorks';
 import Guarantees from '@/pages/Guarantees';
 import FAQPage from '@/pages/FAQPage';
 import RegisterReferrer from '@/pages/RegisterReferrer';
 import RefLanding from '@/pages/RefLanding';
+import SecretCodeLogin from '@/pages/SecretCodeLogin';
+import ResendCode from '@/pages/ResendCode';
 
+// Dashboard (referrer)
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
-import AdminLayout from '@/components/admin/AdminLayout';
-import ModeratorLayout from '@/components/moderator/ModeratorLayout';
+import Overview from '@/pages/dashboard/Overview';
+import MyLink from '@/pages/dashboard/MyLink';
+import MyCandidates from '@/pages/dashboard/MyCandidates';
+import MyRewards from '@/pages/dashboard/MyRewards';
+import Payouts from '@/pages/dashboard/Payouts';
+import Leaderboard from '@/pages/dashboard/Leaderboard';
+import Security from '@/pages/dashboard/Security';
 
+// Admin
+import AdminLayout from '@/components/admin/AdminLayout';
 import AdminOverview from '@/pages/admin/AdminOverview';
 import AdminMasterLinks from '@/pages/admin/AdminMasterLinks';
 import AdminUsers from '@/pages/admin/AdminUsers';
@@ -33,19 +39,14 @@ import AdminPayouts from '@/pages/admin/AdminPayouts';
 import AdminAnalytics from '@/pages/admin/AdminAnalytics';
 import AdminLogs from '@/pages/admin/AdminLogs';
 
+// Moderator
+import ModeratorLayout from '@/components/moderator/ModeratorLayout';
 import ModeratorOverview from '@/pages/moderator/ModeratorOverview';
 import ModeratorCandidates from '@/pages/moderator/ModeratorCandidates';
 import ModeratorTasks from '@/pages/moderator/ModeratorTasks';
-import Overview from '@/pages/dashboard/Overview';
-import MyLink from '@/pages/dashboard/MyLink';
-import MyCandidates from '@/pages/dashboard/MyCandidates';
-import MyRewards from '@/pages/dashboard/MyRewards';
-import Payouts from '@/pages/dashboard/Payouts';
-import Leaderboard from '@/pages/dashboard/Leaderboard';
-import Security from '@/pages/dashboard/Security';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+  const { isLoadingAuth, isLoadingPublicSettings, authError } = useAuth();
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
@@ -55,57 +56,68 @@ const AuthenticatedApp = () => {
     );
   }
 
-  if (authError) {
-    if (authError.type === 'user_not_registered') {
-      return <UserNotRegisteredError />;
-    } else if (authError.type === 'auth_required') {
-      navigateToLogin();
-      return null;
-    }
+  if (authError?.type === 'user_not_registered') {
+    return <UserNotRegisteredError />;
   }
 
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-
+      {/* Public routes */}
       <Route path="/" element={<Home />} />
       <Route path="/how-it-works" element={<HowItWorks />} />
       <Route path="/guarantees" element={<Guarantees />} />
       <Route path="/faq" element={<FAQPage />} />
       <Route path="/register-referrer" element={<RegisterReferrer />} />
       <Route path="/ref/:code" element={<RefLanding />} />
+      <Route path="/secret-login" element={<SecretCodeLogin />} />
+      <Route path="/resend-code" element={<ResendCode />} />
 
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<DashboardLayout />}>
-          <Route path="/dashboard" element={<Overview />} />
-          <Route path="/dashboard/link" element={<MyLink />} />
-          <Route path="/dashboard/candidates" element={<MyCandidates />} />
-          <Route path="/dashboard/rewards" element={<MyRewards />} />
-          <Route path="/dashboard/payouts" element={<Payouts />} />
-          <Route path="/dashboard/leaderboard" element={<Leaderboard />} />
-          <Route path="/dashboard/security" element={<Security />} />
-        </Route>
+      {/* Legacy login redirect */}
+      <Route path="/login" element={<Navigate to="/secret-login" replace />} />
+      <Route path="/register" element={<Navigate to="/register-referrer" replace />} />
+      <Route path="/forgot-password" element={<Navigate to="/resend-code" replace />} />
+      <Route path="/reset-password" element={<Navigate to="/secret-login" replace />} />
+
+      {/* Referrer dashboard — role guard */}
+      <Route path="/dashboard" element={
+        <RoleGuard allowedRoles={["referrer"]}>
+          <DashboardLayout />
+        </RoleGuard>
+      }>
+        <Route index element={<Overview />} />
+        <Route path="link" element={<MyLink />} />
+        <Route path="candidates" element={<MyCandidates />} />
+        <Route path="rewards" element={<MyRewards />} />
+        <Route path="payouts" element={<Payouts />} />
+        <Route path="leaderboard" element={<Leaderboard />} />
+        <Route path="security" element={<Security />} />
       </Route>
 
-      <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
-        <Route element={<AdminLayout />}>
-          <Route path="/admin" element={<AdminOverview />} />
-          <Route path="/admin/master-links" element={<AdminMasterLinks />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/candidates" element={<AdminCandidates />} />
-          <Route path="/admin/rewards" element={<AdminRewards />} />
-          <Route path="/admin/payouts" element={<AdminPayouts />} />
-          <Route path="/admin/analytics" element={<AdminAnalytics />} />
-          <Route path="/admin/logs" element={<AdminLogs />} />
-        </Route>
-        <Route element={<ModeratorLayout />}>
-          <Route path="/moderator" element={<ModeratorOverview />} />
-          <Route path="/moderator/candidates" element={<ModeratorCandidates />} />
-          <Route path="/moderator/tasks" element={<ModeratorTasks />} />
-        </Route>
+      {/* Admin panel — role guard */}
+      <Route path="/admin" element={
+        <RoleGuard allowedRoles={["admin", "super_admin"]}>
+          <AdminLayout />
+        </RoleGuard>
+      }>
+        <Route index element={<AdminOverview />} />
+        <Route path="master-links" element={<AdminMasterLinks />} />
+        <Route path="users" element={<AdminUsers />} />
+        <Route path="candidates" element={<AdminCandidates />} />
+        <Route path="rewards" element={<AdminRewards />} />
+        <Route path="payouts" element={<AdminPayouts />} />
+        <Route path="analytics" element={<AdminAnalytics />} />
+        <Route path="logs" element={<AdminLogs />} />
+      </Route>
+
+      {/* Moderator CRM — role guard */}
+      <Route path="/moderator" element={
+        <RoleGuard allowedRoles={["moderator"]}>
+          <ModeratorLayout />
+        </RoleGuard>
+      }>
+        <Route index element={<ModeratorOverview />} />
+        <Route path="candidates" element={<ModeratorCandidates />} />
+        <Route path="tasks" element={<ModeratorTasks />} />
       </Route>
 
       <Route path="*" element={<PageNotFound />} />

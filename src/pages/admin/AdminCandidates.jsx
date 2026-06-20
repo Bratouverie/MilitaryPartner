@@ -46,6 +46,16 @@ export default function AdminCandidates() {
       const old = selected.current_status;
       await base44.entities.CandidateApplication.update(selected.id, { current_status: newStatus });
       await base44.entities.CandidateStatusHistory.create({ candidate_id: selected.id, old_status: old, new_status: newStatus, change_comment: comment });
+      await base44.entities.ActionLog.create({ actor_role: "admin", action_type: "CANDIDATE_STATUS_CHANGED", entity_type: "CandidateApplication", entity_id: selected.id, action_payload: JSON.stringify({ old, new: newStatus }) });
+      // Auto-create reward on milestone
+      if (["CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY"].includes(newStatus) && selected.source_referrer_id) {
+        const existing = await base44.entities.Reward.filter({ candidate_id: selected.id, reward_type: newStatus.toLowerCase() });
+        if (existing.length === 0) {
+          const refProfiles = await base44.entities.ReferralProfile.filter({ id: selected.source_referrer_id });
+          const amount = refProfiles[0]?.referral_reward || 50000;
+          await base44.entities.Reward.create({ candidate_id: selected.id, beneficiary_user_id: selected.source_referrer_id, source_referrer_id: selected.source_referrer_id, amount, reward_type: newStatus.toLowerCase(), status: "pending" });
+        }
+      }
       toast({ title: "Статус обновлён!" });
       setSelected(null); setComment(""); setNewStatus("");
       load();

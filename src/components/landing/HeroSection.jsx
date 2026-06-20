@@ -1,9 +1,29 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Shield, TrendingUp, Users } from "lucide-react";
+import { Shield, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
+import { base44 } from "@/api/base44Client";
 
 export default function HeroSection() {
+  const [stats, setStats] = useState(null);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [referrers, candidates, rewards] = await Promise.all([
+          base44.entities.ReferralProfile.filter({ role: "referrer" }),
+          base44.entities.CandidateApplication.list(),
+          base44.entities.Reward.filter({ status: "paid" }),
+        ]);
+        const totalPaid = rewards.reduce((s, r) => s + (r.amount || 0), 0);
+        if (referrers.length > 0 || candidates.length > 0) {
+          setStats({ referrers: referrers.length, candidates: candidates.length, totalPaid });
+        }
+      } catch {}
+    };
+    load();
+  }, []);
+
   return (
     <section className="relative overflow-hidden bg-primary py-20 md:py-32">
       <div className="absolute inset-0 opacity-10">
@@ -20,12 +40,12 @@ export default function HeroSection() {
           <span className="text-accent">рекрутинге</span>
         </h1>
         <p className="text-primary-foreground/70 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          Делись персональной ссылкой, привлекай кандидатов на контракт и получай вознаграждение до 200 000 ₽ за каждого подтверждённого.
+          Делись персональной ссылкой, привлекай кандидатов на контракт и получай вознаграждение за каждого подтверждённого.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
           <Link to="/register-referrer">
             <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold text-lg px-8 h-14 rounded-xl">
-              Создать мою реферальную ссылку
+              Получить реферальную ссылку <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>
           <Link to="/how-it-works">
@@ -34,19 +54,22 @@ export default function HeroSection() {
             </Button>
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
-          {[
-            { icon: Users, label: "Рефералов в сети", value: "340+" },
-            { icon: TrendingUp, label: "Выплачено всего", value: "2.3 млн ₽" },
-            { icon: Shield, label: "Средняя за контракт", value: "165 000 ₽" },
-          ].map((s) => (
-            <div key={s.label} className="bg-primary-foreground/5 backdrop-blur-sm rounded-xl p-5 border border-primary-foreground/10">
-              <s.icon className="w-6 h-6 text-accent mx-auto mb-2" />
-              <div className="text-2xl font-bold text-primary-foreground">{s.value}</div>
-              <div className="text-sm text-primary-foreground/60">{s.label}</div>
-            </div>
-          ))}
-        </div>
+
+        {/* Only show stats if we have real data */}
+        {stats && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
+            {[
+              { label: "Рефералов в сети", value: stats.referrers > 0 ? `${stats.referrers}+` : null },
+              { label: "Выплачено рефералам", value: stats.totalPaid > 0 ? `${(stats.totalPaid).toLocaleString()} ₽` : null },
+              { label: "Кандидатов привлечено", value: stats.candidates > 0 ? `${stats.candidates}+` : null },
+            ].filter(s => s.value).map((s) => (
+              <div key={s.label} className="bg-primary-foreground/5 backdrop-blur-sm rounded-xl p-5 border border-primary-foreground/10">
+                <div className="text-2xl font-bold text-primary-foreground">{s.value}</div>
+                <div className="text-sm text-primary-foreground/60">{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
