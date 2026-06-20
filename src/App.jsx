@@ -25,6 +25,7 @@ import AdminBootstrap from '@/pages/AdminBootstrap';
 // Dashboard (referrer)
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
 import Overview from '@/pages/dashboard/Overview';
+import ReferralDashboard from '@/pages/dashboard/ReferralDashboard';
 import MyPrograms from '@/pages/dashboard/MyPrograms';
 import MyLink from '@/pages/dashboard/MyLink';
 import MyCandidates from '@/pages/dashboard/MyCandidates';
@@ -85,7 +86,8 @@ const AuthenticatedApp = () => {
 
       {/* Referrer dashboard — guarded by role */}
       <Route path="/dashboard" element={<RoleGuard allowedRoles={["referrer"]}><DashboardLayout /></RoleGuard>}>
-        <Route index element={<Overview />} />
+        <Route index element={<ReferralDashboard />} />
+        <Route path="overview" element={<Overview />} />
         <Route path="programs" element={<MyPrograms />} />
         <Route path="link" element={<MyLink />} />
         <Route path="candidates" element={<MyCandidates />} />

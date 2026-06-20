@@ -48,9 +48,9 @@ export default function ReferralHeroSection() {
         <Link to="/secret-login" className="block w-full md:w-auto md:inline-block">
           <Button
             size="lg"
-            className="bg-accent text-accent-foreground hover:bg-accent/90 font-black text-xl md:px-12 px-6 h-16 rounded-xl mb-10 w-full md:w-auto"
+            className="bg-accent text-accent-foreground hover:bg-accent/90 font-black md:text-xl text-base md:px-12 px-4 md:h-16 h-14 rounded-xl mb-10 w-full md:w-auto"
           >
-            СОЗДАТЬ РЕФЕРАЛЬНУЮ ССЫЛКУ <ArrowRight className="w-6 h-6 ml-2" />
+            СОЗДАТЬ ССЫЛКУ <ArrowRight className="w-5 h-5 md:w-6 md:h-6 ml-1 md:ml-2" />
           </Button>
         </Link>
 
