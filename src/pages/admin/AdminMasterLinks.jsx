@@ -32,9 +32,12 @@ export default function AdminMasterLinks() {
   const [form, setForm] = useState({ title: "", max_reward: "", moderator_id: "" });
   const [formError, setFormError] = useState("");
   const [expandedRoots, setExpandedRoots] = useState({});
-  const [changingModerator, setChangingModerator] = useState(null); // prog id
+  const [changingModerator, setChangingModerator] = useState(null);
   const [newModeratorId, setNewModeratorId] = useState("");
   const [savingMod, setSavingMod] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(null); // prog id
+  const [newStatus, setNewStatus] = useState("");
+  const [savingStatus, setSavingStatus] = useState(false);
 
   const currentProfile = getStoredProfile();
 
@@ -88,6 +91,8 @@ export default function AdminMasterLinks() {
         direct_children_count: 0,
         children_count: 0,
         candidates_count: 0,
+        program_status: "active",
+        owner_program_level: 0,
       });
 
       await base44.entities.ActionLog.create({
@@ -124,6 +129,35 @@ export default function AdminMasterLinks() {
     await base44.entities.ReferralProgram.update(prog.id, { is_active: !prog.is_active });
     toast({ title: prog.is_active ? "Программа отключена" : "Программа включена" });
     load();
+  };
+
+  // Lifecycle: active / frozen / replaced / archived
+  const LIFECYCLE_LABELS = { active: "Активна", frozen: "Заморожена", replaced: "Заменена", archived: "В архиве" };
+  const LIFECYCLE_COLORS = {
+    active: "bg-green-100 text-green-700", frozen: "bg-blue-100 text-blue-700",
+    replaced: "bg-amber-100 text-amber-700", archived: "bg-gray-100 text-gray-500",
+  };
+  const changeLifecycle = async (prog) => {
+    setSavingStatus(true);
+    const now = new Date().toISOString();
+    const updates = { program_status: newStatus };
+    if (newStatus === "frozen") updates.frozen_at = now;
+    if (newStatus === "replaced") updates.replaced_at = now;
+    if (newStatus === "archived") { updates.archived_at = now; updates.is_active = false; }
+    try {
+      await base44.entities.ReferralProgram.update(prog.id, updates);
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentProfile?.id,
+        action_type: "PROGRAM_STATUS_CHANGED",
+        entity_type: "ReferralProgram",
+        entity_id: prog.id,
+        action_payload: JSON.stringify({ old: prog.program_status || "active", new: newStatus }),
+      }).catch(() => {});
+      toast({ title: `Статус изменён: ${LIFECYCLE_LABELS[newStatus]}` });
+      setChangingStatus(null);
+      load();
+    } catch { toast({ title: "Ошибка", variant: "destructive" }); }
+    finally { setSavingStatus(false); }
   };
 
   const changeModerator = async (prog) => {
@@ -172,10 +206,11 @@ export default function AdminMasterLinks() {
             <div className="flex items-center gap-2 flex-wrap mb-1">
               {indent > 0 && <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
               <span className="font-medium text-sm">{prog.title}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${prog.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                {prog.is_active ? "Активна" : "Отключена"}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${LIFECYCLE_COLORS[prog.program_status || "active"]}`}>
+                {LIFECYCLE_LABELS[prog.program_status || "active"]}
               </span>
               {prog.is_root && <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Root</span>}
+              {(prog.owner_program_level || 0) >= 1 && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">★ Уровень 1</span>}
             </div>
 
             <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -220,11 +255,11 @@ export default function AdminMasterLinks() {
           </div>
 
           {/* Правая часть — действия */}
-          <div className="flex gap-1 shrink-0">
+          <div className="flex gap-1 shrink-0 flex-wrap">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setChangingModerator(prog.id); setNewModeratorId(prog.assigned_moderator_id || ""); }}>
               <Edit2 className="w-3 h-3" />
             </Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => toggleActive(prog)}>
+            <Button size="sm" variant="outline" className="h-7 text-xs" title="Жизненный цикл" onClick={() => { setChangingStatus(prog.id); setNewStatus(prog.program_status || "active"); }}>
               <Power className="w-3 h-3" />
             </Button>
             {children.length > 0 && (
@@ -251,6 +286,32 @@ export default function AdminMasterLinks() {
               <Button variant="outline" size="sm" className="flex-1" onClick={() => setChangingModerator(null)}>Отмена</Button>
               <Button size="sm" className="flex-1 bg-primary" onClick={() => changeModerator(prog)} disabled={savingMod}>
                 {savingMod ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Сохранить"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Смена lifecycle-статуса */}
+        {changingStatus === prog.id && (
+          <div className="ml-2 mb-3 bg-muted rounded-xl p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Жизненный цикл программы</span>
+              <button onClick={() => setChangingStatus(null)}><X className="w-4 h-4 text-muted-foreground" /></button>
+            </div>
+            <select className="h-9 px-3 border border-input rounded-md bg-background text-sm w-full"
+              value={newStatus} onChange={e => setNewStatus(e.target.value)}>
+              <option value="active">✅ Активна — принимает новых партнёров</option>
+              <option value="frozen">❄️ Заморожена — старые ветки живут, новых нет</option>
+              <option value="replaced">🔄 Заменена — есть новая замещающая программа</option>
+              <option value="archived">📦 В архиве — только история</option>
+            </select>
+            <div className="text-xs text-muted-foreground bg-amber-50 border border-amber-100 rounded-lg p-2">
+              ⚠️ Квота и дерево не изменяются. Старые ветки сохраняются по snapshot-данным.
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="flex-1" onClick={() => setChangingStatus(null)}>Отмена</Button>
+              <Button size="sm" className="flex-1 bg-primary" onClick={() => changeLifecycle(prog)} disabled={savingStatus}>
+                {savingStatus ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Применить"}
               </Button>
             </div>
           </div>

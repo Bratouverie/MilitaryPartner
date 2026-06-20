@@ -40,12 +40,12 @@ export default function HeroSection() {
           <span className="text-accent">рекрутинге</span>
         </h1>
         <p className="text-primary-foreground/70 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-          Делись персональной ссылкой, привлекай кандидатов на контракт и получай вознаграждение за каждого подтверждённого.
+          Участвуй в партнёрской программе по реферальной ссылке, привлекай кандидатов и получай вознаграждение за каждого подтверждённого контракта.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-          <Link to="/register-referrer">
+          <Link to="/secret-login">
             <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold text-lg px-8 h-14 rounded-xl">
-              Получить реферальную ссылку <ArrowRight className="w-5 h-5 ml-2" />
+              Войти в кабинет <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>
           <Link to="/how-it-works">

@@ -43,13 +43,8 @@ export default function PublicHeader() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
-          <Link to="/register-referrer">
-            <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium">Получить ссылку</Button>
-          </Link>
           <Link to={ctaDest()}>
-            <Button size="sm" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
-              {ctaLabel()}
-            </Button>
+            <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium">{ctaLabel()}</Button>
           </Link>
         </div>
 
@@ -64,11 +59,8 @@ export default function PublicHeader() {
           <Link to="/guarantees" onClick={() => setMobileOpen(false)} className="block text-sm text-primary-foreground/80 py-1">Гарантии</Link>
           <Link to="/faq" onClick={() => setMobileOpen(false)} className="block text-sm text-primary-foreground/80 py-1">FAQ</Link>
           <div className="flex gap-3 pt-2">
-            <Link to="/register-referrer" onClick={() => setMobileOpen(false)} className="flex-1">
-              <Button size="sm" className="w-full bg-accent text-accent-foreground">Получить ссылку</Button>
-            </Link>
             <Link to={ctaDest()} onClick={() => setMobileOpen(false)} className="flex-1">
-              <Button size="sm" variant="outline" className="w-full border-primary-foreground/30 text-primary-foreground">{ctaLabel()}</Button>
+              <Button size="sm" className="w-full bg-accent text-accent-foreground">{ctaLabel()}</Button>
             </Link>
           </div>
         </div>

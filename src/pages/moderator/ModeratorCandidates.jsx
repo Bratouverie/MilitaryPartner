@@ -82,6 +82,35 @@ export default function ModeratorCandidates() {
           rewardType: newStatus.toLowerCase(),
           actorUserId: moderatorProfileId,
         });
+
+        // Повышение уровня программы: первый прямой контракт → owner_program_level = 1
+        // Срабатывает только при CONTRACT_SIGNED и только один раз на программу
+        if (newStatus === "CONTRACT_SIGNED") {
+          try {
+            const programs = await base44.entities.ReferralProgram.filter({ id: selected.source_program_id });
+            const prog = programs[0];
+            // Проверяем прямую связь: кандидат пришёл по форме именно этой программы
+            if (prog && (prog.owner_program_level || 0) < 1) {
+              const now = new Date().toISOString();
+              await base44.entities.ReferralProgram.update(prog.id, {
+                owner_program_level: 1,
+                owner_level_achieved_at: now,
+              });
+              await base44.entities.ActionLog.create({
+                actor_user_id: moderatorProfileId,
+                action_type: "PROGRAM_OWNER_LEVEL_UPGRADED",
+                entity_type: "ReferralProgram",
+                entity_id: prog.id,
+                action_payload: JSON.stringify({
+                  owner_user_id: prog.owner_user_id,
+                  candidate_id: selected.id,
+                  new_level: 1,
+                  achieved_at: now,
+                }),
+              }).catch(() => {});
+            }
+          } catch {}
+        }
       } else if (["CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY"].includes(newStatus) && selected.source_referrer_id) {
         // Legacy fallback: если нет source_program_id
         const existing = await base44.entities.Reward.filter({ candidate_id: selected.id, reward_type: newStatus.toLowerCase() });

@@ -140,6 +140,16 @@ export default function MyLink() {
                   Из цепочки: {(prog.parent_reward_quota - prog.reward_quota).toLocaleString()} ₽ идёт выше · {(prog.parent_reward_quota).toLocaleString()} ₽ суммарно
                 </div>
               )}
+              {/* Уровень в программе — НЕ путать с глубиной дерева и рангом партнёра */}
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                {(prog.owner_program_level || 0) >= 1 ? (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                    ★ Уровень 1 в программе {prog.owner_level_achieved_at ? `с ${new Date(prog.owner_level_achieved_at).toLocaleDateString("ru-RU")}` : ""}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Уровень 0 → достигните 1 после первого подписанного контракта</span>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-1 items-end">
               <span className="text-xs text-muted-foreground">{prog.direct_children_count || 0}/{MAX_DIRECT_CHILDREN} подпрограмм</span>
