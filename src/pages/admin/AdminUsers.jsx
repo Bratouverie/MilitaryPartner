@@ -64,7 +64,7 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
     // Email обязателен для staff и L1 рефералов
     const emailLower = form.email.trim().toLowerCase();
     if (!emailLower) { setError("Email обязателен."); return; }
-    if (isL1Referrer && !form.program_id) { setError("Выберите программу для назначения."); return; }
+    if ((isL1Referrer || form.role === "moderator") && !form.program_id) { setError("Выберите программу."); return; }
     setLoading(true);
     try {
       {
@@ -93,9 +93,18 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
         masked_secret_code: maskCode(secretCode),
         secret_code_last_sent_at: now,
         referral_code: form.role + "-" + Date.now().toString(36),
-        master_link_id: form.master_link_id || undefined,
         level: isL1Referrer ? "L0_novice" : undefined,
       });
+
+      // Если это модератор — обновляем программу с assigned_moderator_id
+      if (form.role === "moderator" && form.program_id) {
+        const selectedProgram = freshPrograms.find(p => p.id === form.program_id);
+        if (!selectedProgram) throw new Error("Программа не найдена");
+
+        await base44.entities.ReferralProgram.update(form.program_id, {
+          assigned_moderator_id: profile.id,
+        });
+      }
 
       // Если это L1 реферал — создаём собственную ReferralProgram
       let childProgram = null;
@@ -291,9 +300,9 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
               {CREATABLE_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
-          {isL1Referrer && (
+          {(isL1Referrer || form.role === "moderator") && (
             <div>
-              <Label>Программа для назначения *</Label>
+              <Label>{isL1Referrer ? "Программа для владения *" : "Программа для курирования *"}</Label>
               {programsLoading ? (
                 <div className="h-10 flex items-center text-xs text-muted-foreground">Загрузка программ…</div>
               ) : freshPrograms.length > 0 ? (
@@ -304,15 +313,6 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
               ) : (
                 <div className="h-10 flex items-center text-xs text-destructive">Нет доступных корневых программ</div>
               )}
-            </div>
-          )}
-          {!isL1Referrer && masterLinks.length > 0 && (
-            <div>
-              <Label>Мастер-ссылка (необязательно)</Label>
-              <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.master_link_id} onChange={e => setForm(f => ({ ...f, master_link_id: e.target.value }))}>
-                <option value="">— не назначена —</option>
-                {masterLinks.map(ml => <option key={ml.id} value={ml.id}>{ml.title}</option>)}
-              </select>
             </div>
           )}
           {error && <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">{error}</div>}
