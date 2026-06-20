@@ -104,17 +104,21 @@ export default function CandidateThankYou() {
           <h2 className="font-heading font-bold text-xl mb-4">Что будет дальше</h2>
           <div className="space-y-4">
             {STEPS.map((step, i) => (
-              <div key={i} className="flex items-start gap-4 p-4 bg-card border border-border rounded-2xl">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${step.color}`}>
-                  <step.icon className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="font-medium">{i + 1}. {step.title}</div>
-                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0">{step.time}</span>
+              <div key={i}>
+                <div className="flex items-start gap-4 p-4 bg-card border border-border rounded-t-2xl">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${step.color}`}>
+                    <step.icon className="w-5 h-5" />
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5">{step.description}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="font-medium">{i + 1}. {step.title}</div>
+                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0">{step.time}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-0.5">{step.description}</p>
+                  </div>
                 </div>
+                {/* Visual separator */}
+                <div className={`h-1 ${step.color.replace('bg-', 'bg-').split(' ')[0]} rounded-b-2xl opacity-20 mb-4`} />
               </div>
             ))}
           </div>

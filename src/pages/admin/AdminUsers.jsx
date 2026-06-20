@@ -26,23 +26,26 @@ const ROLE_LABELS = {
 const CREATABLE_ROLES = [
   { value: "admin", label: "Администратор" },
   { value: "moderator", label: "Модератор" },
+  { value: "referrer_l1", label: "Реферал 1-го уровня (для конкретной программы)" },
 ];
 
-function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
+function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, programs }) {
   const { toast } = useToast();
-  const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "" });
+  const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "", program_id: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [createdCode, setCreatedCode] = useState(null); // показываем код сразу после создания
   const [showCode, setShowCode] = useState(false);
+  const isL1Referrer = form.role === "referrer_l1";
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     if (currentRole !== "super_admin") { setError("Недостаточно прав."); return; }
-    // Email обязателен для staff
+    // Email обязателен для staff и L1 рефералов
     const emailLower = form.email.trim().toLowerCase();
-    if (!emailLower) { setError("Email обязателен для staff-аккаунтов."); return; }
+    if (!emailLower) { setError("Email обязателен."); return; }
+    if (isL1Referrer && !form.program_id) { setError("Выберите программу для назначения."); return; }
     setLoading(true);
     try {
       {
@@ -61,17 +64,31 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
       }
       const now = new Date().toISOString();
 
+      const role = isL1Referrer ? "referrer" : form.role;
       const profile = await base44.entities.ReferralProfile.create({
         email: emailLower,
-        full_name: form.full_name || (form.role === "admin" ? "Администратор" : "Модератор"),
-        role: form.role,
+        full_name: form.full_name || (form.role === "admin" ? "Администратор" : form.role === "moderator" ? "Модератор" : "Реферал"),
+        role: role,
         status: "active",
         secret_code: secretCode,
         masked_secret_code: maskCode(secretCode),
         secret_code_last_sent_at: now,
         referral_code: form.role + "-" + Date.now().toString(36),
         master_link_id: form.master_link_id || undefined,
+        level: isL1Referrer ? "L0_novice" : undefined,
       });
+
+      // Если это L1 реферал — создаём ProgramMembership
+      if (isL1Referrer && form.program_id) {
+        await base44.entities.ProgramMembership.create({
+          user_id: profile.id,
+          program_id: form.program_id,
+          membership_role: "owner",
+          membership_status: "active",
+          source_join_type: "direct_assignment",
+          joined_at: now,
+        }).catch(() => {});
+      }
 
       // Email обязателен — всегда отправляем
       {
@@ -87,9 +104,9 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
 
       await base44.entities.ActionLog.create({
         actor_user_id: getStoredProfileId(), actor_role: currentRole,
-        action_type: "STAFF_USER_CREATED",
+        action_type: isL1Referrer ? "L1_REFERRER_CREATED" : "STAFF_USER_CREATED",
         entity_type: "ReferralProfile", entity_id: profile.id,
-        action_payload: JSON.stringify({ email: emailLower || null, role: form.role }),
+        action_payload: JSON.stringify({ email: emailLower || null, role: form.role, program_id: form.program_id }),
       }).catch(() => {});
 
       // Показываем код администратору сразу
@@ -146,7 +163,7 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between p-6 border-b border-border">
-          <h2 className="font-heading font-bold text-lg">Создать staff-аккаунт</h2>
+          <h2 className="font-heading font-bold text-lg">{isL1Referrer ? "Создать реферала 1-го уровня" : "Создать staff-аккаунт"}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="w-5 h-5" />
           </button>
@@ -158,16 +175,25 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
           </div>
           <div>
             <Label>Email *</Label>
-            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="staff@example.com" required />
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="user@example.com" required />
             <p className="text-xs text-muted-foreground mt-1">Обязателен. Секретный код будет отправлен на этот адрес.</p>
           </div>
           <div>
             <Label>Роль *</Label>
-            <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+            <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value, program_id: "" }))}>
               {CREATABLE_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
-          {masterLinks.length > 0 && (
+          {isL1Referrer && programs.length > 0 && (
+            <div>
+              <Label>Программа для назначения *</Label>
+              <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.program_id} onChange={e => setForm(f => ({ ...f, program_id: e.target.value }))}>
+                <option value="">Выберите программу…</option>
+                {programs.filter(p => p.is_root).map(p => <option key={p.id} value={p.id}>{p.title} ({(p.reward_quota || 0).toLocaleString()} ₽)</option>)}
+              </select>
+            </div>
+          )}
+          {!isL1Referrer && masterLinks.length > 0 && (
             <div>
               <Label>Мастер-ссылка (необязательно)</Label>
               <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.master_link_id} onChange={e => setForm(f => ({ ...f, master_link_id: e.target.value }))}>
@@ -197,6 +223,7 @@ export default function AdminUsers() {
 
   const [users, setUsers] = useState([]);
   const [masterLinks, setMasterLinks] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -206,12 +233,14 @@ export default function AdminUsers() {
   const [visibleCodes, setVisibleCodes] = useState({}); // id -> true/false показывать код
 
   const load = async () => {
-    const [data, mls] = await Promise.all([
+    const [data, mls, progs] = await Promise.all([
       base44.entities.ReferralProfile.list(),
       base44.entities.MasterLink.list(),
+      base44.entities.ReferralProgram.list(),
     ]);
     setUsers(data);
     setMasterLinks(mls);
+    setPrograms(progs);
     setLoading(false);
   };
 
@@ -495,6 +524,7 @@ export default function AdminUsers() {
           onClose={() => setShowCreate(false)}
           onCreated={load}
           masterLinks={masterLinks}
+          programs={programs}
           currentRole={currentRole}
         />
       )}

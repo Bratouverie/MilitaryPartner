@@ -136,11 +136,11 @@ export default function RefLanding() {
       const internalDisplayTitle = baseProgramTitle;
 
       childProg = await base44.entities.ReferralProgram.create({
-        title: internalDisplayTitle || "Ветка партнёра",
-        base_program_title: baseProgramTitle,
-        child_prefix_title: "",
-        internal_display_title: internalDisplayTitle,
-        public_program_title: publicProgramTitle,
+         title: internalDisplayTitle || "Новый партнёр",
+         base_program_title: baseProgramTitle,
+         child_prefix_title: "Новый партнёр",
+         internal_display_title: internalDisplayTitle,
+         public_program_title: publicProgramTitle,
         link_code: linkCode,
         candidate_form_code: formCode,
         owner_user_id: profileId,

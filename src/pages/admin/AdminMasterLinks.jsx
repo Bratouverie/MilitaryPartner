@@ -38,6 +38,7 @@ export default function AdminMasterLinks() {
   const [changingStatus, setChangingStatus] = useState(null); // prog id
   const [newStatus, setNewStatus] = useState("");
   const [savingStatus, setSavingStatus] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   const currentProfile = getStoredProfile();
 
@@ -337,12 +338,17 @@ export default function AdminMasterLinks() {
         <div>
           <h1 className="font-heading text-2xl font-bold">Реферальные программы</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Корневых программ: <strong>{rootPrograms.length}</strong> · Всего программ: <strong>{allPrograms.length}</strong>
+            Корневых программ: <strong>{rootPrograms.filter(p => !p.is_archived || showArchived).length}</strong> · Всего программ: <strong>{allPrograms.filter(p => !p.is_archived || showArchived).length}</strong>
           </p>
         </div>
-        <Button onClick={() => { setShowCreateForm(true); setFormError(""); }} className="bg-primary font-medium">
-          <Plus className="w-4 h-4 mr-2" />Создать программу
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant={showArchived ? "default" : "outline"} onClick={() => setShowArchived(!showArchived)} size="sm" className="text-xs">
+            {showArchived ? "Скрыть архив" : "Показать архив"}
+          </Button>
+          <Button onClick={() => { setShowCreateForm(true); setFormError(""); }} className="bg-primary font-medium">
+            <Plus className="w-4 h-4 mr-2" />Создать программу
+          </Button>
+        </div>
       </div>
 
       {/* Форма создания */}
@@ -412,7 +418,7 @@ export default function AdminMasterLinks() {
       )}
 
       <div className="space-y-2">
-        {rootPrograms.map(prog => <TreeNode key={prog.id} prog={prog} indent={0} />)}
+        {rootPrograms.filter(p => !p.is_archived || showArchived).map(prog => <TreeNode key={prog.id} prog={prog} indent={0} />)}
       </div>
 
       {/* Легенда плотности */}

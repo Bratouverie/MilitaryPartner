@@ -128,7 +128,7 @@ export default function MyLink() {
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="flex-1">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <span className="font-heading font-bold text-lg">{prog.title}</span>
+                <span className="font-heading font-bold text-lg">{prog.internal_display_title || prog.title}</span>
                 <span className={`text-xs px-2 py-0.5 rounded-full ${prog.program_kind === "root" || prog.is_root ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
                   {prog.is_root || prog.program_kind === "root" ? "Корневая" : `Глубина ветки: ${prog.depth}`}
                 </span>
@@ -230,8 +230,9 @@ export default function MyLink() {
                     <button onClick={() => setShowChildForm(null)}><X className="w-4 h-4 text-muted-foreground" /></button>
                   </div>
                   <div>
-                    <Label className="text-xs">Название *</Label>
+                    <Label className="text-xs">Префикс подпрограммы (название вашей ветки) *</Label>
                     <Input value={childForm.title} onChange={e => setChildForm(f => ({ ...f, title: e.target.value }))} placeholder="Команда Иванова" className="h-8 text-sm mt-1" />
+                    <p className="text-xs text-muted-foreground mt-1">Базовое название программы будет унаследовано автоматически</p>
                   </div>
                   <div>
                     <Label className="text-xs">Квота подпрограммы (₽) *</Label>
@@ -267,7 +268,7 @@ export default function MyLink() {
                       <button onClick={() => setExpandedChild(prev => ({ ...prev, [child.id]: !prev[child.id] }))}
                         className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors text-left">
                         <div>
-                          <div className="font-medium text-sm">{child.title}</div>
+                          <div className="font-medium text-sm">{child.internal_display_title || child.title}</div>
                           <div className="text-xs text-muted-foreground">{(child.reward_quota || 0).toLocaleString()} ₽ · {child.candidates_count || 0} кандидатов · глубина {child.depth}</div>
                         </div>
                         {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
@@ -318,7 +319,7 @@ export default function MyLink() {
           {programs.map(p => (
             <button key={p.id} onClick={() => setSelectedProgramId(p.id)}
               className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${selectedProgramId === p.id ? "border-primary bg-primary/10 text-primary font-medium" : "border-border text-muted-foreground hover:border-primary/40"}`}>
-              {p.title}
+              {p.internal_display_title || p.title}
             </button>
           ))}
         </div>
@@ -331,7 +332,7 @@ export default function MyLink() {
       {programs.length > 1 && programs.filter(p => p.id !== selectedProgram?.id).map(prog => (
         <details key={prog.id} className="mb-2">
           <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground px-1 py-2">
-            {prog.title} — {(prog.reward_quota || 0).toLocaleString()} ₽
+            {prog.internal_display_title || prog.title} — {(prog.reward_quota || 0).toLocaleString()} ₽
           </summary>
           <div className="mt-2"><ProgramBlock prog={prog} /></div>
         </details>

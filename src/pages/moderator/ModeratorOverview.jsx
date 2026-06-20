@@ -6,7 +6,7 @@
  */
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { Loader2, AlertCircle, Clock, Users, CheckSquare, GitBranch, TrendingUp, FileText, Phone } from "lucide-react";
+import { Loader2, AlertCircle, Clock, Users, CheckSquare, GitBranch, TrendingUp, FileText, Phone, Copy, Share2, QrCode } from "lucide-react";
 import { useProfile } from "@/lib/useProfile.jsx";
 import { Link } from "react-router-dom";
 import moment from "moment";
@@ -38,6 +38,7 @@ export default function ModeratorOverview() {
   const [urgentTaskCount, setUrgentTaskCount] = useState(0);
 
   const [filter, setFilter] = useState("all");
+  const [showLinks, setShowLinks] = useState(false);
 
   // Быстрая загрузка: только программы
   useEffect(() => {
@@ -97,6 +98,48 @@ export default function ModeratorOverview() {
             {s.sub && <div className="text-xs text-muted-foreground">{s.sub}</div>}
           </div>
         ))}
+      </div>
+
+      {/* Мои ссылки */}
+      <div className="bg-card border border-border rounded-2xl p-5 mb-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <h2 className="font-heading font-bold flex items-center gap-2">
+            <Share2 className="w-5 h-5 text-primary" />Мои ссылки
+          </h2>
+          <button onClick={() => setShowLinks(!showLinks)} className="text-sm text-primary hover:underline">
+            {showLinks ? "Скрыть" : "Показать"}
+          </button>
+        </div>
+        {showLinks && (
+          <div className="mt-4 space-y-3">
+            {rootPrograms.map(prog => {
+              const baseUrl = window.location.origin;
+              const joinLink = `${baseUrl}/join/${prog.link_code}`;
+              const candidateLink = `${baseUrl}/candidate/${prog.candidate_form_code}`;
+              return (
+                <div key={prog.id} className="border border-border rounded-xl p-3">
+                  <div className="font-medium text-sm mb-2">{getInternalTitle(prog)}</div>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div className="bg-muted rounded-lg p-2">
+                      <div className="text-xs text-muted-foreground mb-1">🔗 Партнёрская ссылка</div>
+                      <div className="text-xs font-mono break-all mb-1">{joinLink}</div>
+                      <button onClick={() => { navigator.clipboard.writeText(joinLink); }} className="text-xs text-primary hover:underline">
+                        <Copy className="w-3 h-3 inline mr-1" />Копировать
+                      </button>
+                    </div>
+                    <div className="bg-muted rounded-lg p-2">
+                      <div className="text-xs text-muted-foreground mb-1">📋 Анкета кандидата</div>
+                      <div className="text-xs font-mono break-all mb-1">{candidateLink}</div>
+                      <button onClick={() => { navigator.clipboard.writeText(candidateLink); }} className="text-xs text-primary hover:underline">
+                        <Copy className="w-3 h-3 inline mr-1" />Копировать
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Мои программы */}
