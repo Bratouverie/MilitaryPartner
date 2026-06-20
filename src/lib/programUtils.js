@@ -252,7 +252,7 @@ export async function createChildProgram({ parentProgram, title: childPrefixTitl
     program_category: parentProgram.program_category,
   });
 
-  // ProgramMembership для нового владельца
+  // ProgramMembership для нового владельца (БЕЗ silent catch)
   await base44.entities.ProgramMembership.create({
     user_id: ownerUserId,
     program_id: child.id,
@@ -261,7 +261,7 @@ export async function createChildProgram({ parentProgram, title: childPrefixTitl
     source_join_type: "referral_link",
     source_program_id: parentProgram.id,
     joined_at: new Date().toISOString(),
-  }).catch(() => {});
+  });
 
   await base44.entities.ReferralProgram.update(parentProgram.id, {
     direct_children_count: (parentProgram.direct_children_count || 0) + 1,
@@ -342,7 +342,7 @@ export async function createPromotedRootProgram({
     ancestry_path_ids: JSON.stringify([promoted.id]),
   });
 
-  // ProgramMembership
+  // ProgramMembership (БЕЗ silent catch)
   await base44.entities.ProgramMembership.create({
     user_id: ownerUserId,
     program_id: promoted.id,
@@ -351,7 +351,7 @@ export async function createPromotedRootProgram({
     source_join_type: "promotion",
     source_program_id: originProgram.id,
     joined_at: now,
-  }).catch(() => {});
+  });
 
   await base44.entities.ActionLog.create({
     actor_user_id: actorUserId || ownerUserId,

@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Search, Power, Plus, RefreshCw, Mail, ShieldCheck, Eye, EyeOff, Copy, X } from "lucide-react";
 import moment from "moment";
 import { getStoredRole, getStoredProfileId } from "@/lib/profileSession";
-import { createChildProgram } from "@/lib/programUtils";
+
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -30,28 +30,32 @@ const CREATABLE_ROLES = [
   { value: "referrer_l1", label: "Реферал 1-го уровня (для конкретной программы)" },
 ];
 
-function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
+function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen }) {
    const { toast } = useToast();
    const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "", program_id: "" });
    const [loading, setLoading] = useState(false);
    const [error, setError] = useState("");
-   const [createdCode, setCreatedCode] = useState(null); // показываем код сразу после создания
+   const [createdCode, setCreatedCode] = useState(null);
    const [showCode, setShowCode] = useState(false);
    const [freshPrograms, setFreshPrograms] = useState([]);
    const [programsLoading, setProgramsLoading] = useState(false);
    const isL1Referrer = form.role === "referrer_l1";
 
-   // Загружаем свежие программы при открытии модала
+   // Загружаем свежие программы КАЖДЫЙ РАЗ при открытии модала (зависимость isOpen)
    useEffect(() => {
+     if (!isOpen) return;
      setProgramsLoading(true);
      base44.entities.ReferralProgram.filter({ is_root: true, is_archived: false })
        .then(progs => {
          const active = progs.filter(p => p.program_status === "active");
          setFreshPrograms(active);
        })
-       .catch(() => setFreshPrograms([]))
+       .catch(err => {
+         console.error("[CreateStaffModal] Ошибка загрузки программ:", err);
+         setFreshPrograms([]);
+       })
        .finally(() => setProgramsLoading(false));
-   }, []);
+   }, [isOpen]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -99,20 +103,93 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
         const parentProgram = freshPrograms.find(p => p.id === form.program_id);
         if (!parentProgram) throw new Error("Родительская программа не найдена");
 
-        const { program: prog, error: progError } = await createChildProgram({
-          parentProgram,
-          title: form.full_name || "Реферал",
-          childQuota: parentProgram.reward_quota,
-          ownerUserId: profile.id,
-          actorUserId: getStoredProfileId(),
+        // Генерируем уникальные коды (аналогично RefLanding.jsx)
+        const [linkCode, formCode] = await Promise.all([
+          (async () => {
+            for (let i = 0; i < 10; i++) {
+              const code = Math.random().toString(36).substr(2, 10).toUpperCase();
+              const exists = await base44.entities.ReferralProgram.filter({ link_code: code });
+              if (exists.length === 0) return code;
+            }
+            throw new Error("Не удалось сгенерировать уникальный link_code");
+          })(),
+          (async () => {
+            for (let i = 0; i < 10; i++) {
+              const code = Math.random().toString(36).substr(2, 10).toUpperCase();
+              const exists = await base44.entities.ReferralProgram.filter({ candidate_form_code: code });
+              if (exists.length === 0) return code;
+            }
+            throw new Error("Не удалось сгенерировать уникальный candidate_form_code");
+          })(),
+        ]);
+
+        // Вычисляем ancestry (как в RefLanding.jsx)
+        let ancestryIds = [];
+        try { ancestryIds = JSON.parse(parentProgram.ancestry_path_ids || "[]"); } catch {}
+        ancestryIds.push(parentProgram.id);
+        const ancestryJson = JSON.stringify(ancestryIds);
+        const ancestryText = (parentProgram.ancestry_path_text || parentProgram.base_program_title || parentProgram.title) + " / " + (form.full_name || "Реферал");
+
+        // Вычисляем названия программы (как в programUtils.js)
+        const baseProgramTitle = parentProgram.base_program_title || parentProgram.title || "";
+        const internalDisplayTitle = form.full_name
+          ? `${baseProgramTitle} — ${form.full_name}`
+          : baseProgramTitle;
+        const publicProgramTitle = baseProgramTitle;
+
+        // Создаём дочернюю программу НАПРЯМУЮ (без createChildProgram, чтобы избежать валидации "меньше квоты")
+        childProgram = await base44.entities.ReferralProgram.create({
+          title: internalDisplayTitle,
+          base_program_title: baseProgramTitle,
+          child_prefix_title: form.full_name || "Реферал",
+          internal_display_title: internalDisplayTitle,
+          public_program_title: publicProgramTitle,
+          link_code: linkCode,
+          candidate_form_code: formCode,
+          owner_user_id: profile.id,  // ← ключевое: реферал владеет этой программой!
+          parent_program_id: parentProgram.id,
+          root_program_id: parentProgram.root_program_id || parentProgram.id,
+          root_master_link_id: parentProgram.root_master_link_id,
+          assigned_moderator_id: parentProgram.assigned_moderator_id,
+          reward_quota: parentProgram.reward_quota,  // наследуем полную квоту
+          parent_reward_quota: parentProgram.reward_quota,
+          depth: (parentProgram.depth || 0) + 1,
+          ancestry_path_ids: ancestryJson,
+          ancestry_path_text: ancestryText,
+          program_kind: "child",
+          program_status: "active",
+          is_root: false,
+          is_active: true,
+          is_archived: false,
+          can_create_child: parentProgram.reward_quota > 5000,  // MIN_QUOTA
+          direct_children_count: 0,
+          children_count: 0,
+          candidates_count: 0,
+          contracts_count: 0,
+          pending_rewards_sum: 0,
+          paid_rewards_sum: 0,
+          owner_program_level: 0,
+          region_code: parentProgram.region_code,
+          region_name: parentProgram.region_name,
+          program_category: parentProgram.program_category,
         });
 
-        if (progError || !prog) {
-          // Откат: помечаем профиль как неактивный
-          await base44.entities.ReferralProfile.update(profile.id, { status: "inactive" }).catch(() => {});
-          throw new Error(`Ошибка создания программы реферала: ${progError}`);
-        }
-        childProgram = prog;
+        // Создаём ProgramMembership БЕЗ silent catch (ошибки должны быть видны!)
+        await base44.entities.ProgramMembership.create({
+          user_id: profile.id,
+          program_id: childProgram.id,
+          membership_role: "owner",
+          membership_status: "active",
+          source_join_type: "direct_assignment",
+          source_program_id: parentProgram.id,
+          joined_at: now,
+        });
+
+        // Обновляем счётчики родителя
+        await base44.entities.ReferralProgram.update(parentProgram.id, {
+          direct_children_count: (parentProgram.direct_children_count || 0) + 1,
+          children_count: (parentProgram.children_count || 0) + 1,
+        });
       }
 
       // Email обязателен — всегда отправляем
@@ -561,6 +638,7 @@ export default function AdminUsers() {
            onCreated={load}
            masterLinks={masterLinks}
            currentRole={currentRole}
+           isOpen={showCreate}
          />
        )}
     </div>
