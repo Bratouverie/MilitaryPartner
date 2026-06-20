@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { Loader2, Link2, Users, UserCheck, Banknote, TrendingUp, Clock, ShieldCheck, GitBranch } from "lucide-react";
+import { Loader2, Link2, Users, UserCheck, Banknote, TrendingUp, Clock, ShieldCheck, GitBranch, AlertCircle, CheckCircle, Eye, Target } from "lucide-react";
 import { getStoredRole } from "@/lib/profileSession";
 import moment from "moment";
+import { Link } from "react-router-dom";
 
 const STATUS_LABELS = {
   NEW: "Новый", QUESTIONNAIRE_FILLED: "Анкета заполнена", CONTRACT_SIGNED: "Контракт подписан",
@@ -61,71 +62,166 @@ export default function AdminOverview() {
   const roleLabel = role === "super_admin" ? "Супер-администратор" : "Администратор";
   const roleBadge = role === "super_admin" ? "bg-amber-100 text-amber-800 border-amber-200" : "bg-blue-100 text-blue-800 border-blue-200";
 
-  const cards = [
-    { icon: Link2, label: "Корневых программ", value: stats.rootPrograms, sub: `из ${stats.totalPrograms} всего`, color: "text-blue-600" },
-    { icon: GitBranch, label: "Подпрограмм", value: stats.childPrograms, color: "text-indigo-600" },
-    { icon: Users, label: "Рефералов", value: stats.referrers, color: "text-teal-600" },
-    { icon: UserCheck, label: "Кандидатов", value: stats.candidates, sub: `${stats.contractSigned} контрактов`, color: "text-emerald-600" },
-    { icon: Clock, label: "Ожидают выплаты", value: `${stats.pendingAmount.toLocaleString()} ₽`, sub: `${stats.pendingRewards} записей`, color: "text-amber-600" },
-    { icon: Banknote, label: "Выплачено", value: `${stats.paidAmount.toLocaleString()} ₽`, color: "text-green-600" },
+  const kpiMetrics = [
+    { 
+      icon: Link2, 
+      label: "Корневые программы", 
+      value: stats.rootPrograms, 
+      sub: `из ${stats.totalPrograms} всего`, 
+      color: "bg-blue-50 text-blue-700 border-blue-200",
+      path: "/admin/master-links"
+    },
+    { 
+      icon: GitBranch, 
+      label: "Веток в дереве", 
+      value: stats.childPrograms, 
+      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      path: "/admin/master-links"
+    },
+    { 
+      icon: Users, 
+      label: "Активных рефералов", 
+      value: stats.referrers, 
+      color: "bg-teal-50 text-teal-700 border-teal-200",
+      path: "/admin/users"
+    },
+    { 
+      icon: UserCheck, 
+      label: "Кандидатов всего", 
+      value: stats.candidates, 
+      sub: `${stats.contractSigned} контрактов`, 
+      color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+      path: "/admin/candidates"
+    },
+    { 
+      icon: Clock, 
+      label: "На выплату (₽)", 
+      value: `${(stats.pendingAmount / 1000).toFixed(0)}К`, 
+      sub: `${stats.pendingRewards} записей`, 
+      color: "bg-amber-50 text-amber-700 border-amber-200",
+      path: "/admin/payouts"
+    },
+    { 
+      icon: Banknote, 
+      label: "Выплачено (₽)", 
+      value: `${(stats.paidAmount / 1000).toFixed(0)}К`, 
+      color: "bg-green-50 text-green-700 border-green-200",
+      path: "/admin/payouts"
+    },
+  ];
+
+  // Статусы для быстрого определения узких мест
+  const bottlenecks = [
+    { 
+      status: "NEW", 
+      label: "Новых анкет", 
+      count: recentCandidates.filter(c => c.current_status === "NEW").length,
+      icon: AlertCircle,
+      hint: "Требуют звонка куратора"
+    },
+    { 
+      status: "CONTRACT_SIGNED", 
+      label: "Подписано контрактов", 
+      count: stats.contractSigned,
+      icon: CheckCircle,
+      hint: "Отличный прогресс"
+    },
   ];
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="font-heading text-2xl font-bold">Панель управления</h1>
+        <div>
+          <h1 className="font-heading text-2xl font-bold">Панель управления</h1>
+          <p className="text-sm text-muted-foreground mt-1">Быстрый обзор ключевых метрик платформы</p>
+        </div>
         <div className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border ${roleBadge}`}>
-          <ShieldCheck className="w-4 h-4" /> Вы: <strong>{roleLabel}</strong>
+          <ShieldCheck className="w-4 h-4" /> {roleLabel}
         </div>
       </div>
 
+      {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-        {cards.map((c, i) => (
-          <div key={i} className="bg-card border border-border rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <c.icon className={`w-5 h-5 ${c.color}`} />
-              <span className="text-sm text-muted-foreground">{c.label}</span>
+        {kpiMetrics.map((m, i) => (
+          <Link key={i} to={m.path} className="group">
+            <div className={`${m.color} border rounded-xl p-5 cursor-pointer transition-all hover:shadow-lg hover:scale-105 hover:border-current`}>
+              <div className="flex items-center justify-between mb-2">
+                <m.icon className="w-5 h-5" />
+                <Eye className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
+              <div className="text-xs font-medium opacity-80 mb-1">{m.label}</div>
+              <div className="font-heading text-2xl font-bold">{m.value}</div>
+              {m.sub && <div className="text-xs opacity-70 mt-1">{m.sub}</div>}
             </div>
-            <div className="font-heading text-2xl font-bold">{c.value}</div>
-            {c.sub && <div className="text-xs text-muted-foreground mt-1">{c.sub}</div>}
+          </Link>
+        ))}
+      </div>
+
+      {/* Bottleneck Alerts */}
+      <div className="grid lg:grid-cols-2 gap-4 mb-8">
+        {bottlenecks.map((b, i) => (
+          <div key={i} className={`border rounded-xl p-4 ${b.count > 0 ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`}>
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${b.count > 0 ? 'bg-amber-100' : 'bg-green-100'}`}>
+                <b.icon className={`w-5 h-5 ${b.count > 0 ? 'text-amber-700' : 'text-green-700'}`} />
+              </div>
+              <div className="flex-1">
+                <div className={`font-medium ${b.count > 0 ? 'text-amber-900' : 'text-green-900'}`}>{b.label}</div>
+                <div className={`text-xs ${b.count > 0 ? 'text-amber-700' : 'text-green-700'}`}>{b.hint}</div>
+              </div>
+              <div className="font-heading text-xl font-bold">{b.count}</div>
+            </div>
           </div>
         ))}
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-heading font-bold mb-4">Последние кандидаты</h2>
-          <div className="space-y-3">
-            {recentCandidates.length === 0 && <p className="text-muted-foreground text-sm">Кандидатов нет</p>}
-            {recentCandidates.map(c => (
-              <div key={c.id} className="flex items-center justify-between gap-2">
-                <div>
-                  <div className="font-medium text-sm">{c.full_name || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{c.phone} · {moment(c.created_date).format("DD.MM.YYYY")}</div>
+        <Link to="/admin/candidates" className="group">
+          <div className="bg-card border border-border rounded-2xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all h-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-heading font-bold">Последние кандидаты</h2>
+              <Eye className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <div className="space-y-3">
+              {recentCandidates.length === 0 && <p className="text-muted-foreground text-sm">Кандидатов нет</p>}
+              {recentCandidates.map(c => (
+                <div key={c.id} className="flex items-center justify-between gap-2 hover:bg-muted/30 p-2 rounded transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm">{c.full_name || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{c.phone} · {moment(c.created_date).format("DD.MM.YYYY")}</div>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLOR[c.current_status] || "bg-gray-100 text-gray-600"}`}>
+                    {STATUS_LABELS[c.current_status] || c.current_status}
+                  </span>
                 </div>
-                <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLOR[c.current_status] || "bg-gray-100 text-gray-600"}`}>
-                  {STATUS_LABELS[c.current_status] || c.current_status}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-heading font-bold mb-4">Топ рефералов по выплатам</h2>
-          <div className="space-y-3">
-            {topReferrers.length === 0 && <p className="text-muted-foreground text-sm">Нет данных</p>}
-            {topReferrers.map((r, i) => (
-              <div key={r.id} className="flex items-center gap-3">
-                <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">{i + 1}</div>
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{r.full_name || "—"}</div>
-                  <div className="text-xs text-muted-foreground">{r.total_candidates_count || 0} кандидатов · ранг {r.level?.replace("_", " ") || "—"}</div>
+        </Link>
+        <Link to="/admin/users" className="group">
+          <div className="bg-card border border-border rounded-2xl p-6 cursor-pointer hover:shadow-lg hover:border-primary/50 transition-all h-full">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-heading font-bold">🏆 Топ рефералов</h2>
+              <Eye className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+            <div className="space-y-3">
+              {topReferrers.length === 0 && <p className="text-muted-foreground text-sm">Нет данных</p>}
+              {topReferrers.map((r, i) => (
+                <div key={r.id} className="flex items-center gap-3 hover:bg-muted/30 p-2 rounded transition-colors">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-200 text-gray-700' : 'bg-orange-100 text-orange-700'}`}>
+                    {i + 1}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate">{r.full_name || "—"}</div>
+                    <div className="text-xs text-muted-foreground">{r.total_candidates_count || 0} кандидатов · уровень {r.level?.replace(/_/g, " ") || "—"}</div>
+                  </div>
+                  <div className="font-bold text-sm whitespace-nowrap">{(r.total_earned || 0).toLocaleString()} ₽</div>
                 </div>
-                <div className="font-bold text-sm">{(r.total_earned || 0).toLocaleString()} ₽</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        </Link>
       </div>
     </div>
   );

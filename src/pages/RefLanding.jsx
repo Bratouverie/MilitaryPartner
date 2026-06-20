@@ -323,38 +323,92 @@ export default function RefLanding() {
     </div>
   );
 
-  // Экран успеха — только показать секретный код
+  // Экран успеха — показать код + onboarding что делать дальше
   if (done && createdProfile) return (
     <div className="min-h-screen bg-background flex flex-col"><Header />
-      <div className="flex-1 flex items-center justify-center px-4 py-16">
-        <div className="w-full max-w-md text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle className="w-8 h-8 text-green-600" />
+      <div className="flex-1 px-4 py-12 w-full">
+        <div className="max-w-3xl mx-auto">
+          {/* Success banner */}
+          <div className="text-center mb-10">
+            <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h1 className="font-heading text-3xl font-bold mb-2">Кабинет создан!</h1>
+            <p className="text-muted-foreground text-base">Начните приносить первых кандидатов прямо сейчас</p>
           </div>
-          <h1 className="font-heading text-2xl font-bold mb-2">Кабинет создан!</h1>
-          <p className="text-muted-foreground text-sm mb-2">Ваш секретный код — единственный способ войти в кабинет.</p>
-          <p className="text-xs text-muted-foreground mb-6">ФИО, телефон и другие данные заполните позже в кабинете.</p>
-          <div className="bg-card border border-border rounded-2xl p-6">
-            <div className="flex items-center gap-2 justify-center mb-3 text-sm font-medium text-primary">
-              <Key className="w-4 h-4" />Секретный код для входа
+
+          <div className="grid lg:grid-cols-2 gap-8 mb-12">
+            {/* Левая часть: код + важное */}
+            <div>
+              <div className="bg-card border border-border rounded-2xl p-6 mb-6">
+                <div className="flex items-center gap-2 mb-3 text-sm font-medium text-primary">
+                  <Key className="w-4 h-4" />Секретный код для входа
+                </div>
+                <div className="bg-muted rounded-xl p-4 font-mono text-center text-sm mb-3 break-all min-h-[52px] flex items-center justify-center">
+                  {showCode ? createdProfile.secret_code : createdProfile.masked_secret_code}
+                </div>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  <Button variant="outline" size="sm" onClick={() => setShowCode(v => !v)} className="h-10 text-xs">
+                    {showCode ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+                    {showCode ? "Скрыть" : "Показать"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleCopy} className="h-10 text-xs">
+                    <Copy className="w-3.5 h-3.5 mr-1" />Копировать
+                  </Button>
+                </div>
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  ⚠️ Сохраните код прямо сейчас. Без него войти не получится.
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5">
+                <div className="font-medium text-blue-900 mb-3">Как войти в кабинет?</div>
+                <div className="space-y-2 text-sm text-blue-800">
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-blue-600">1.</span>
+                    <span>Перейдите на <Link to="/secret-login" className="text-blue-600 font-semibold hover:underline">/secret-login</Link></span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-blue-600">2.</span>
+                    <span>Вставьте сохранённый код</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="font-bold text-blue-600">3.</span>
+                    <span>Готово — вы в кабинете!</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="bg-muted rounded-xl p-4 font-mono text-center text-sm mb-3 break-all min-h-[52px] flex items-center justify-center">
-              {showCode ? createdProfile.secret_code : createdProfile.masked_secret_code}
+
+            {/* Правая часть: что делать дальше */}
+            <div>
+              <h2 className="font-heading font-bold text-lg mb-4">Что делать дальше</h2>
+              <div className="space-y-3">
+                {[
+                  { num: "1", icon: "👤", title: "Заполните профиль", desc: "Добавьте ФИО, телефон, контакты в кабинете" },
+                  { num: "2", icon: "🔗", title: "Найдите свои ссылки", desc: "Партнёрская ссылка и QR в разделе «Мои ссылки»" },
+                  { num: "3", icon: "📤", title: "Поделитесь ссылкой", desc: "Отправьте в Telegram, WhatsApp, скопируйте QR" },
+                  { num: "4", icon: "🎯", title: "Смотрите кандидатов", desc: "Все анкеты будут в разделе «Кандидаты»" },
+                  { num: "5", icon: "💰", title: "Получайте выплаты", desc: "При подписании контракта выплаты приходят автоматически" },
+                ].map((step, i) => (
+                  <div key={i} className="bg-muted/50 border border-border rounded-lg p-4 hover:bg-muted transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className="text-2xl mt-0.5">{step.icon}</div>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{step.title}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{step.desc}</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <Button variant="outline" size="sm" onClick={() => setShowCode(v => !v)} className="h-10 text-xs">
-                {showCode ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
-                {showCode ? "Скрыть" : "Показать"}
-              </Button>
-              <Button variant="outline" size="sm" onClick={handleCopy} className="h-10 text-xs">
-                <Copy className="w-3.5 h-3.5 mr-1" />Копировать
-              </Button>
-            </div>
-            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-4">
-              ⚠️ Сохраните код прямо сейчас. Без него войти не получится — пароля нет.
-            </div>
-            <Button onClick={() => { window.location.href = "/dashboard"; }} className="w-full bg-primary font-bold h-12 rounded-xl">
-              Я сохранил — перейти в кабинет →
+          </div>
+
+          {/* CTA */}
+          <div className="text-center">
+            <Button onClick={() => { window.location.href = "/dashboard"; }} className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 rounded-xl px-8 text-base">
+              Перейти в кабинет →
             </Button>
           </div>
         </div>
