@@ -59,6 +59,13 @@ export default function CandidateForm() {
         chainSnapshot = JSON.stringify(ancestryIds);
       } catch {}
 
+      // Снимок root-программы
+      let rootProgramSnapshot = "{}";
+      try {
+        const rootProgs = await base44.entities.ReferralProgram.filter({ id: program.root_program_id || program.id });
+        if (rootProgs[0]) rootProgramSnapshot = JSON.stringify({ id: rootProgs[0].id, title: rootProgs[0].title, reward_quota: rootProgs[0].reward_quota });
+      } catch {}
+
       const candidate = await base44.entities.CandidateApplication.create({
         full_name: form.full_name,
         phone: form.phone,
@@ -69,9 +76,14 @@ export default function CandidateForm() {
         current_status: "QUESTIONNAIRE_FILLED",
         source_channel: "candidate_form",
         source_referrer_id: program.owner_user_id,
+        source_referrer_user_id: program.owner_user_id,
         source_program_id: program.id,
         root_program_id: program.root_program_id || program.id,
+        source_candidate_form_code: formCode,
+        program_region_code: program.region_code || undefined,
         reward_chain_snapshot_json: chainSnapshot,
+        root_program_snapshot_json: rootProgramSnapshot,
+        reward_formula_version: "v1",
         source_master_link_id: program.root_master_link_id || undefined,
         assigned_moderator_id: program.assigned_moderator_id || undefined,
         preferred_contact_method: "phone",

@@ -121,7 +121,7 @@ export default function Overview() {
               <GitBranch className="w-5 h-5 text-primary" />
               <span className="font-heading font-bold">Мои программы</span>
             </div>
-            <Link to="/dashboard/link" className="text-sm text-primary hover:underline">Управление →</Link>
+            <Link to="/dashboard/programs" className="text-sm text-primary hover:underline">Портфель программ →</Link>
           </div>
           <div className="space-y-2">
             {myPrograms.map(prog => (
@@ -165,7 +165,8 @@ export default function Overview() {
         <h3 className="font-heading font-bold mb-3">Быстрые действия</h3>
         <div className="space-y-2">
           {[
-            { to: "/dashboard/link", label: "Мои ссылки и подпрограммы" },
+            { to: "/dashboard/programs", label: "Портфель программ" },
+            { to: "/dashboard/link", label: "Ссылки и подпрограммы" },
             { to: "/dashboard/candidates", label: "Мои кандидаты" },
             { to: "/dashboard/rewards", label: "История вознаграждений" },
             { to: "/dashboard/payouts", label: "Платёжный профиль" },

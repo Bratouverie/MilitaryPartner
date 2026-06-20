@@ -1,3 +1,8 @@
+/**
+ * Единый helper для работы с программами и выплатами.
+ * ВСЯ валидация квот идёт отсюда — никаких дублей по компонентам.
+ * ВАРИАНТ C: повышение создаёт НОВЫЙ контур, старая ветка не меняется.
+ */
 import { base44 } from "@/api/base44Client";
 
 export const MIN_QUOTA = 5000;
@@ -6,12 +11,6 @@ export const MAX_DIRECT_CHILDREN = 10;
 
 // ─── Валидация квоты ─────────────────────────────────────────────────────────
 
-/**
- * Валидирует значение квоты.
- * @param {number} value - предлагаемая квота
- * @param {number|null} parentValue - квота родительской программы (null для root)
- * @returns {{ valid: boolean, error: string|null }}
- */
 export function validateQuota(value, parentValue = null) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return { valid: false, error: "Квота должна быть положительным числом" };
@@ -23,12 +22,11 @@ export function validateQuota(value, parentValue = null) {
   return { valid: true, error: null };
 }
 
-/**
- * Может ли программа иметь дочерние (quota > 5000 и direct_children_count < 10)?
- */
 export function canHaveChildren(program) {
   if (!program) return false;
+  const statusOk = !program.program_status || program.program_status === "active";
   return (
+    statusOk &&
     (program.reward_quota || 0) > MIN_QUOTA &&
     (program.direct_children_count || 0) < MAX_DIRECT_CHILDREN &&
     program.is_active &&
@@ -61,72 +59,26 @@ export async function genUniqueCandidateCode() {
   return "cf-" + genCode(14);
 }
 
-// ─── Построение дерева ───────────────────────────────────────────────────────
+// ─── Загрузка дерева ─────────────────────────────────────────────────────────
 
-/**
- * Строит полную цепочку программ от leaf до root.
- * Использует parent_program_id (immutable).
- * @returns {ReferralProgram[]} массив [leaf, ..., root]
- */
-export async function buildProgramChain(programId) {
-  const chain = [];
-  let currentId = programId;
-  const visited = new Set();
-  while (currentId && !visited.has(currentId)) {
-    visited.add(currentId);
-    const programs = await base44.entities.ReferralProgram.filter({ link_code: "_NOMATCH_" }); // fallback
-    // Реальный запрос через filter по id невозможен напрямую — используем ancestry_path_ids
-    // Поэтому загружаем через list и ищем по id
-    break; // используем ancestry ниже
-  }
-  return chain;
+export async function loadProgramTree(rootProgramId) {
+  return base44.entities.ReferralProgram.filter({ root_program_id: rootProgramId });
 }
 
-/**
- * Загружает цепочку программ по ancestry_path_ids (надёжный метод).
- * @param {string} ancestryJson - строка JSON из ancestry_path_ids
- * @param {string[]} allPrograms - кэш всех программ (опционально)
- */
 export async function loadChainFromAncestry(ancestryJson, allPrograms = null) {
   try {
     const ids = JSON.parse(ancestryJson || "[]");
     if (!ids.length) return [];
     const pool = allPrograms || await base44.entities.ReferralProgram.list();
     return ids.map(id => pool.find(p => p.id === id)).filter(Boolean);
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
-/**
- * Загружает дерево для root программы (все потомки).
- */
-export async function loadProgramTree(rootProgramId) {
-  const all = await base44.entities.ReferralProgram.filter({ root_program_id: rootProgramId });
-  // также добавить саму root
-  return all;
-}
-
-// ─── Каскадное распределение вознаграждений ──────────────────────────────────
+// ─── Распределение вознаграждений ─────────────────────────────────────────────
 
 /**
- * Вычисляет распределение вознаграждения по цепочке.
- * chain[0] = leaf, chain[last] = root.
- *
- * Правило:
- *   - leaf owner получает leaf.reward_quota
- *   - каждый parent получает (parent.reward_quota - child.reward_quota)
- *   - сумма = root.reward_quota
- *
- * Пример: 200000 -> 80000 -> 50000 -> 5000
- *   leaf = 5000
- *   parent[1] = 50000 - 5000 = 45000
- *   parent[2] = 80000 - 50000 = 30000
- *   root = 200000 - 80000 = 120000
- *   sum = 200000 ✓
- *
- * @param {ReferralProgram[]} chain - [leaf, ..., root]
- * @returns {{ program: ReferralProgram, amount: number, level: number }[]}
+ * Вычисляет распределение по цепочке [leaf, ..., root].
+ * Инвариант: сумма === root.reward_quota
  */
 export function calcRewardDistribution(chain) {
   if (!chain || chain.length === 0) return [];
@@ -137,11 +89,8 @@ export function calcRewardDistribution(chain) {
     const amount = i === 0
       ? (current.reward_quota || 0)
       : (current.reward_quota || 0) - (child?.reward_quota || 0);
-    if (amount > 0) {
-      result.push({ program: current, amount, level: i });
-    }
+    if (amount > 0) result.push({ program: current, amount, level: i });
   }
-  // Проверка: сумма === root.reward_quota
   const total = result.reduce((s, r) => s + r.amount, 0);
   const rootQuota = chain[chain.length - 1]?.reward_quota || 0;
   if (total !== rootQuota) {
@@ -151,21 +100,17 @@ export function calcRewardDistribution(chain) {
 }
 
 /**
- * Создаёт цепочку Reward-записей для milestone кандидата.
- * Предотвращает дублирование (проверяет существующие записи).
- *
- * @param {{ candidateId, programId, rewardType, actorUserId, allPrograms? }} params
- * @returns {Reward[]} созданные записи
+ * Создаёт цепочку Reward для milestone кандидата.
+ * КЛЮЧЕВОЙ ИНВАРИАНТ: все Reward одного milestone имеют один root_program_id.
+ * Нельзя смешивать ветки разных root_program_id.
  */
 export async function createRewardChain({ candidateId, programId, rewardType = "contract_signed", actorUserId, allPrograms }) {
-  // Проверяем дублирование
   const existing = await base44.entities.Reward.filter({ candidate_id: candidateId, reward_type: rewardType });
   if (existing.length > 0) return existing;
 
-  // Загружаем все программы (или используем кэш)
   const pool = allPrograms || await base44.entities.ReferralProgram.list();
 
-  // Строим цепочку по parent_program_id
+  // Строим цепочку строго внутри одного root_program_id
   const chain = [];
   let currentId = programId;
   const visited = new Set();
@@ -182,9 +127,10 @@ export async function createRewardChain({ candidateId, programId, rewardType = "
   const distribution = calcRewardDistribution(chain);
   const rootProgram = chain[chain.length - 1];
 
-  // Снимок цепочки
   const chainSnapshot = JSON.stringify(chain.map(p => ({
-    id: p.id, title: p.title, reward_quota: p.reward_quota, depth: p.depth, owner_user_id: p.owner_user_id
+    id: p.id, title: p.title, reward_quota: p.reward_quota,
+    depth: p.depth, owner_user_id: p.owner_user_id,
+    root_program_id: p.root_program_id
   })));
 
   const created = [];
@@ -192,10 +138,13 @@ export async function createRewardChain({ candidateId, programId, rewardType = "
     const reward = await base44.entities.Reward.create({
       candidate_id: candidateId,
       beneficiary_user_id: program.owner_user_id,
+      beneficiary_program_id: program.id,
       source_referrer_id: chain[0]?.owner_user_id,
       source_program_id: chain[0]?.id,
       root_program_id: rootProgram?.id,
       chain_level: level,
+      reward_formula_version: "v1",
+      reward_snapshot_json: chainSnapshot,
       reward_chain_snapshot_json: chainSnapshot,
       amount,
       reward_type: rewardType,
@@ -224,33 +173,24 @@ export async function createRewardChain({ candidateId, programId, rewardType = "
 }
 
 /**
- * Создаёт дочернюю ReferralProgram.
- * Выполняет все проверки перед созданием.
- *
- * @returns {{ program, error }}
+ * Создаёт дочернюю ReferralProgram + ProgramMembership.
+ * Все проверки централизованы здесь.
  */
 export async function createChildProgram({ parentProgram, title, childQuota, ownerUserId, actorUserId }) {
-  // Валидация квоты
   const { valid, error } = validateQuota(childQuota, parentProgram.reward_quota);
   if (!valid) return { program: null, error };
 
-  // Проверка: parent может иметь детей
   if (!canHaveChildren(parentProgram)) {
     return { program: null, error: "Родительская программа не может иметь дочерних (мин. квота или лимит 10 достигнут)" };
   }
 
-  // Генерируем уникальные коды
   const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
 
-  // Ancestry path
   let ancestryIds = [];
   try { ancestryIds = JSON.parse(parentProgram.ancestry_path_ids || "[]"); } catch {}
   ancestryIds.push(parentProgram.id);
   const ancestryJson = JSON.stringify(ancestryIds);
-
-  // Ancestry text
-  let ancestryText = parentProgram.ancestry_path_text || parentProgram.title;
-  ancestryText += " / " + title;
+  const ancestryText = (parentProgram.ancestry_path_text || parentProgram.title) + " / " + title;
 
   const child = await base44.entities.ReferralProgram.create({
     title,
@@ -267,6 +207,7 @@ export async function createChildProgram({ parentProgram, title, childQuota, own
     ancestry_path_ids: ancestryJson,
     ancestry_path_text: ancestryText,
     program_kind: "child",
+    program_status: "active",
     is_root: false,
     is_active: true,
     is_archived: false,
@@ -274,9 +215,26 @@ export async function createChildProgram({ parentProgram, title, childQuota, own
     direct_children_count: 0,
     children_count: 0,
     candidates_count: 0,
+    contracts_count: 0,
+    pending_rewards_sum: 0,
+    paid_rewards_sum: 0,
+    owner_program_level: 0,
+    region_code: parentProgram.region_code,
+    region_name: parentProgram.region_name,
+    program_category: parentProgram.program_category,
   });
 
-  // Атомарно обновляем счётчики у parent
+  // ProgramMembership для нового владельца
+  await base44.entities.ProgramMembership.create({
+    user_id: ownerUserId,
+    program_id: child.id,
+    membership_role: "owner",
+    membership_status: "active",
+    source_join_type: "referral_link",
+    source_program_id: parentProgram.id,
+    joined_at: new Date().toISOString(),
+  }).catch(() => {});
+
   await base44.entities.ReferralProgram.update(parentProgram.id, {
     direct_children_count: (parentProgram.direct_children_count || 0) + 1,
     children_count: (parentProgram.children_count || 0) + 1,
@@ -294,8 +252,92 @@ export async function createChildProgram({ parentProgram, title, childQuota, own
       depth: child.depth,
       reward_quota: childQuota,
       ancestry: ancestryJson,
+      owner_user_id: ownerUserId,
     }),
   }).catch(() => {});
 
   return { program: child, error: null };
+}
+
+/**
+ * ВАРИАНТ C: Создаёт новый promoted_root контур при повышении партнёра.
+ * Старая ветка и её ancestry/snapshot НЕ меняются.
+ *
+ * @param {{ originProgram, ownerUserId, newTitle, newQuota, actorUserId, moderatorId, regionCode, regionName, programCategory }}
+ */
+export async function createPromotedRootProgram({
+  originProgram, ownerUserId, newTitle, newQuota, actorUserId,
+  moderatorId, regionCode, regionName, programCategory
+}) {
+  const { valid, error } = validateQuota(newQuota);
+  if (!valid) return { program: null, error };
+
+  const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
+  const now = new Date().toISOString();
+
+  const promoted = await base44.entities.ReferralProgram.create({
+    title: newTitle,
+    link_code: linkCode,
+    candidate_form_code: formCode,
+    owner_user_id: ownerUserId,
+    parent_program_id: null,
+    root_program_id: null, // заполним после создания
+    assigned_moderator_id: moderatorId || originProgram.assigned_moderator_id,
+    reward_quota: newQuota,
+    parent_reward_quota: null,
+    depth: 0,
+    ancestry_path_ids: "[]",
+    ancestry_path_text: newTitle,
+    program_kind: "promoted_root",
+    program_status: "active",
+    is_root: true,
+    is_active: true,
+    is_archived: false,
+    can_create_child: newQuota > MIN_QUOTA,
+    direct_children_count: 0,
+    children_count: 0,
+    candidates_count: 0,
+    contracts_count: 0,
+    pending_rewards_sum: 0,
+    paid_rewards_sum: 0,
+    owner_program_level: 0,
+    promotion_origin_program_id: originProgram.id,
+    promoted_at: now,
+    region_code: regionCode || originProgram.region_code,
+    region_name: regionName || originProgram.region_name,
+    program_category: programCategory || originProgram.program_category,
+  });
+
+  // root_program_id = self
+  await base44.entities.ReferralProgram.update(promoted.id, {
+    root_program_id: promoted.id,
+    ancestry_path_ids: JSON.stringify([promoted.id]),
+  });
+
+  // ProgramMembership
+  await base44.entities.ProgramMembership.create({
+    user_id: ownerUserId,
+    program_id: promoted.id,
+    membership_role: "owner",
+    membership_status: "active",
+    source_join_type: "promotion",
+    source_program_id: originProgram.id,
+    joined_at: now,
+  }).catch(() => {});
+
+  await base44.entities.ActionLog.create({
+    actor_user_id: actorUserId || ownerUserId,
+    action_type: "PROMOTED_PROGRAM_CREATED",
+    entity_type: "ReferralProgram",
+    entity_id: promoted.id,
+    action_payload: JSON.stringify({
+      origin_program_id: originProgram.id,
+      owner_user_id: ownerUserId,
+      new_quota: newQuota,
+      region_code: regionCode,
+      note: "ВАРИАНТ_C: старая ветка не изменена",
+    }),
+  }).catch(() => {});
+
+  return { program: promoted, error: null };
 }

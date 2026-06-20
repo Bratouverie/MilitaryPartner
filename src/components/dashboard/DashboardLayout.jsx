@@ -1,12 +1,13 @@
 import React, { useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
-import { Shield, LayoutDashboard, LinkIcon, Users, Banknote, CreditCard, Trophy, LogOut, Key, Menu, X } from "lucide-react";
+import { Shield, LayoutDashboard, Briefcase, LinkIcon, Users, Banknote, CreditCard, Trophy, LogOut, Key, Menu, X } from "lucide-react";
 import { clearStoredProfile } from "@/lib/profileSession";
 import { ProfileProvider } from "@/lib/useProfile.jsx";
 
 const navItems = [
   { path: "/dashboard", icon: LayoutDashboard, label: "Обзор" },
-  { path: "/dashboard/link", icon: LinkIcon, label: "Моя ссылка" },
+  { path: "/dashboard/programs", icon: Briefcase, label: "Мои программы" },
+  { path: "/dashboard/link", icon: LinkIcon, label: "Ссылки" },
   { path: "/dashboard/candidates", icon: Users, label: "Кандидаты" },
   { path: "/dashboard/rewards", icon: Banknote, label: "Начисления" },
   { path: "/dashboard/payouts", icon: CreditCard, label: "Выплаты" },

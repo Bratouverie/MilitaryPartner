@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { Loader2, User } from "lucide-react";
+import { Loader2, User, Filter } from "lucide-react";
 import moment from "moment";
 import { useProfile } from "@/lib/useProfile.jsx";
+
+const SELECTED_KEY = "mp_selected_program_id";
 
 const statusLabels = {
   NEW: { label: "Новый", color: "bg-gray-100 text-gray-700" },
@@ -23,28 +25,54 @@ const statusLabels = {
 export default function MyCandidates() {
   const { profile, loading: profileLoading } = useProfile();
   const [candidates, setCandidates] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [filterProgram, setFilterProgram] = useState("all");
 
   useEffect(() => {
     if (!profile) return;
     setLoading(true);
-    base44.entities.CandidateApplication.filter({ source_referrer_id: profile.id })
-      .then(c => { setCandidates(c); setLoading(false); });
+    const savedProg = sessionStorage.getItem(SELECTED_KEY);
+    if (savedProg) setFilterProgram(savedProg);
+    Promise.all([
+      base44.entities.CandidateApplication.filter({ source_referrer_id: profile.id }),
+      base44.entities.ReferralProgram.filter({ owner_user_id: profile.id }),
+    ]).then(([c, p]) => {
+      setCandidates(c);
+      setPrograms(p.sort((a, b) => new Date(a.created_date) - new Date(b.created_date)));
+      setLoading(false);
+    });
   }, [profile?.id]);
 
   if (profileLoading || loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
+  const displayed = filterProgram === "all"
+    ? candidates
+    : candidates.filter(c => c.source_program_id === filterProgram);
+
   return (
     <div>
-      <h1 className="font-heading text-2xl font-bold mb-6">Мои кандидаты ({candidates.length})</h1>
-      {candidates.length === 0 ? (
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+        <h1 className="font-heading text-2xl font-bold">Мои кандидаты ({displayed.length}{filterProgram !== "all" ? ` / всего ${candidates.length}` : ""})</h1>
+        {programs.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <select className="h-8 px-2 border border-input rounded-md bg-background text-sm"
+              value={filterProgram} onChange={e => { setFilterProgram(e.target.value); if (e.target.value !== "all") sessionStorage.setItem(SELECTED_KEY, e.target.value); }}>
+              <option value="all">Все программы</option>
+              {programs.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
+      {displayed.length === 0 ? (
         <div className="text-center py-16 bg-card border border-border rounded-2xl">
           <User className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Пока нет кандидатов. Поделитесь своей ссылкой!</p>
+          <p className="text-muted-foreground">{candidates.length === 0 ? "Пока нет кандидатов. Поделитесь ссылкой анкеты!" : "Нет кандидатов по выбранной программе."}</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {candidates.map(c => {
+          {displayed.map(c => {
             const st = statusLabels[c.current_status] || { label: c.current_status, color: "bg-gray-100 text-gray-700" };
             return (
               <div key={c.id} className="bg-card border border-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">

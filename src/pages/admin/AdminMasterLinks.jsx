@@ -29,7 +29,7 @@ export default function AdminMasterLinks() {
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", max_reward: "", moderator_id: "" });
+  const [form, setForm] = useState({ title: "", max_reward: "", moderator_id: "", region_name: "", region_code: "", program_category: "" });
   const [formError, setFormError] = useState("");
   const [expandedRoots, setExpandedRoots] = useState({});
   const [changingModerator, setChangingModerator] = useState(null);
@@ -91,8 +91,14 @@ export default function AdminMasterLinks() {
         direct_children_count: 0,
         children_count: 0,
         candidates_count: 0,
+        contracts_count: 0,
+        pending_rewards_sum: 0,
+        paid_rewards_sum: 0,
         program_status: "active",
         owner_program_level: 0,
+        region_code: form.region_code || undefined,
+        region_name: form.region_name || undefined,
+        program_category: form.program_category || undefined,
       });
 
       await base44.entities.ActionLog.create({
@@ -116,7 +122,7 @@ export default function AdminMasterLinks() {
 
       toast({ title: "Программа создана!" });
       setShowCreateForm(false);
-      setForm({ title: "", max_reward: "", moderator_id: "" });
+      setForm({ title: "", max_reward: "", moderator_id: "", region_name: "", region_code: "", program_category: "" });
       load();
     } catch {
       setFormError("Ошибка при создании. Попробуйте ещё раз.");
@@ -358,6 +364,20 @@ export default function AdminMasterLinks() {
                   placeholder={`мин. ${MIN_QUOTA.toLocaleString()}, кратно ${QUOTA_STEP.toLocaleString()}`}
                   min={MIN_QUOTA} step={QUOTA_STEP} />
                 <p className="text-xs text-muted-foreground mt-1">Суммарная выплата по всей цепочке за один успешный контракт. Кратно {QUOTA_STEP.toLocaleString()} ₽.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Регион</Label>
+                  <Input value={form.region_name} onChange={e => setForm(f => ({ ...f, region_name: e.target.value }))} placeholder="Москва" className="mt-1" />
+                </div>
+                <div>
+                  <Label>Код региона</Label>
+                  <Input value={form.region_code} onChange={e => setForm(f => ({ ...f, region_code: e.target.value.toUpperCase() }))} placeholder="MSK" className="mt-1" maxLength={6} />
+                </div>
+              </div>
+              <div>
+                <Label>Категория программы</Label>
+                <Input value={form.program_category} onChange={e => setForm(f => ({ ...f, program_category: e.target.value }))} placeholder="контракт_вс" className="mt-1" />
               </div>
               <div>
                 <Label>Назначить модератора</Label>

@@ -1,16 +1,21 @@
 /**
- * /join/:code — ТОЛЬКО информационная страница программы.
+ * /join/:code — ИНФОРМАЦИОННАЯ страница программы.
  * НЕ запрашивает ФИО, телефон, email.
- * Одна кнопка «Получить кабинет» → instant создание профиля без контактных данных.
+ * Одна кнопка «Получить кабинет» → мгновенное создание профиля без контактных данных.
+ * Контактные данные партнёр заполняет позже в кабинете.
  */
 import React, { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Shield, Loader2, AlertTriangle, RefreshCw, Eye, EyeOff, Copy, CheckCircle, ChevronRight, Users, TrendingUp, Star, Key } from "lucide-react";
+import {
+  Shield, Loader2, AlertTriangle, RefreshCw,
+  Eye, EyeOff, Copy, CheckCircle, ChevronRight,
+  Users, TrendingUp, Star, Key, MapPin, Tag
+} from "lucide-react";
 import { setStoredProfile } from "@/lib/profileSession";
 import { toast } from "@/components/ui/use-toast";
-import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA, canHaveChildren } from "@/lib/programUtils";
+import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA } from "@/lib/programUtils";
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -37,11 +42,8 @@ export default function RefLanding() {
       const programs = await base44.entities.ReferralProgram.filter({ link_code: code });
       const prog = programs[0];
       if (!prog) { setLoadState("not_found"); return; }
-      // Программа должна быть active (frozen, replaced, archived — не принимают новых)
       if (prog.program_status && prog.program_status !== "active") {
-        setLoadState("frozen");
-        setProgram(prog);
-        return;
+        setProgram(prog); setLoadState("frozen"); return;
       }
       if (!prog.is_active) { setLoadState("not_found"); return; }
       setProgram(prog);
@@ -55,7 +57,6 @@ export default function RefLanding() {
     if (submitting) return;
     setSubmitting(true);
     try {
-      // Уникальный secret_code
       let secretCode;
       for (let i = 0; i < 5; i++) {
         secretCode = genSecretCode();
@@ -66,7 +67,7 @@ export default function RefLanding() {
       const now = new Date().toISOString();
       const referralCode = genRefCode();
 
-      // Создаём профиль БЕЗ контактных полей — заполнит позже в кабинете
+      // Профиль БЕЗ контактных полей — заполнит позже в кабинете
       const profile = await base44.entities.ReferralProfile.create({
         role: "referrer",
         status: "active",
@@ -82,7 +83,7 @@ export default function RefLanding() {
         personal_max_reward_snapshot: program?.reward_quota,
       });
 
-      // Дочерняя программа
+      // Дочерняя программа для нового партнёра
       const childQuota = program?.reward_quota || MIN_QUOTA;
       const [linkCode, formCode] = await Promise.all([genUniqueLinkCode(), genUniqueCandidateCode()]);
 
@@ -90,7 +91,7 @@ export default function RefLanding() {
       try { ancestryIds = JSON.parse(program?.ancestry_path_ids || "[]"); } catch {}
       ancestryIds.push(program?.id);
 
-      await base44.entities.ReferralProgram.create({
+      const childProg = await base44.entities.ReferralProgram.create({
         title: `Ветка партнёра`,
         link_code: linkCode,
         candidate_form_code: formCode,
@@ -109,8 +110,23 @@ export default function RefLanding() {
         is_root: false, is_active: true, is_archived: false,
         can_create_child: childQuota > MIN_QUOTA,
         direct_children_count: 0, children_count: 0, candidates_count: 0,
+        contracts_count: 0, pending_rewards_sum: 0, paid_rewards_sum: 0,
         owner_program_level: 0,
+        region_code: program?.region_code,
+        region_name: program?.region_name,
+        program_category: program?.program_category,
       });
+
+      // ProgramMembership — фиксируем участие в контуре
+      await base44.entities.ProgramMembership.create({
+        user_id: profile.id,
+        program_id: childProg.id,
+        membership_role: "owner",
+        membership_status: "active",
+        source_join_type: "referral_link",
+        source_program_id: program?.id,
+        joined_at: now,
+      }).catch(() => {});
 
       await base44.entities.ReferralProgram.update(program.id, {
         direct_children_count: (program.direct_children_count || 0) + 1,
@@ -121,7 +137,11 @@ export default function RefLanding() {
         action_type: "PROFILE_CREATED_FROM_PROGRAM_LINK",
         entity_type: "ReferralProfile",
         entity_id: profile.id,
-        action_payload: JSON.stringify({ link_code: code, parent_program_id: program?.id, quota: childQuota }),
+        action_payload: JSON.stringify({
+          link_code: code, parent_program_id: program?.id,
+          child_program_id: childProg.id, quota: childQuota,
+          note: "без_контактных_данных_заполнит_позже"
+        }),
       }).catch(() => {});
 
       setStoredProfile({ ...profile, secret_code: secretCode });
@@ -150,7 +170,11 @@ export default function RefLanding() {
     </header>
   );
 
-  if (loadState === "loading") return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (loadState === "loading") return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
 
   if (loadState === "not_found") return (
     <div className="min-h-screen flex flex-col"><Header />
@@ -186,7 +210,7 @@ export default function RefLanding() {
     </div>
   );
 
-  // Экран успеха
+  // Экран успеха — только показать секретный код
   if (done && createdProfile) return (
     <div className="min-h-screen bg-background flex flex-col"><Header />
       <div className="flex-1 flex items-center justify-center px-4 py-16">
@@ -196,10 +220,10 @@ export default function RefLanding() {
           </div>
           <h1 className="font-heading text-2xl font-bold mb-2">Кабинет создан!</h1>
           <p className="text-muted-foreground text-sm mb-2">Ваш секретный код — единственный способ войти в кабинет.</p>
-          <p className="text-xs text-muted-foreground mb-6">Личные данные (ФИО, телефон) можно заполнить позже в кабинете.</p>
+          <p className="text-xs text-muted-foreground mb-6">ФИО, телефон и другие данные заполните позже в кабинете.</p>
           <div className="bg-card border border-border rounded-2xl p-6">
             <div className="flex items-center gap-2 justify-center mb-3 text-sm font-medium text-primary">
-              <Key className="w-4 h-4" />Ваш секретный код для входа
+              <Key className="w-4 h-4" />Секретный код для входа
             </div>
             <div className="bg-muted rounded-xl p-4 font-mono text-center text-sm mb-3 break-all min-h-[52px] flex items-center justify-center">
               {showCode ? createdProfile.secret_code : createdProfile.masked_secret_code}
@@ -238,10 +262,26 @@ export default function RefLanding() {
       <Header />
       <div className="max-w-4xl mx-auto px-4 py-12 w-full">
         <div className="grid md:grid-cols-2 gap-10 items-start">
-          {/* Левая колонка — информация */}
+          {/* Левая колонка — только информация */}
           <div>
             <div className="text-sm text-accent font-semibold uppercase tracking-widest mb-3">Партнёрская программа</div>
             <h1 className="font-heading text-3xl font-black mb-4 leading-tight">{program.title}</h1>
+
+            {/* Регион и категория */}
+            {(program.region_name || program.program_category) && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {program.region_name && (
+                  <span className="flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                    <MapPin className="w-3 h-3 text-primary" />{program.region_name}
+                  </span>
+                )}
+                {program.program_category && (
+                  <span className="flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded-full">
+                    <Tag className="w-3 h-3 text-primary" />{program.program_category}
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="bg-card border border-border rounded-2xl p-5 mb-6">
               <div className="text-sm text-muted-foreground mb-1">Вознаграждение за успешный контракт по вашей ветке</div>
@@ -268,7 +308,7 @@ export default function RefLanding() {
               {[
                 "Нажмите «Получить кабинет» — профиль создаётся мгновенно",
                 "Вам выдаётся секретный код для входа — запишите его",
-                "Личные данные заполняете в кабинете когда удобно",
+                "ФИО, телефон и другие данные заполняете в кабинете когда удобно",
                 "Направляйте кандидатов по своей ссылке анкеты",
                 "При подписании контракта — вознаграждение начисляется автоматически",
               ].map((text, i) => (
@@ -290,6 +330,7 @@ export default function RefLanding() {
 
               <div className="bg-muted rounded-xl p-4 mb-5 space-y-2 text-sm">
                 <div className="flex items-center gap-2"><span className="text-primary font-medium">✓</span>Вы входите в программу: <strong>{program.title}</strong></div>
+                {program.region_name && <div className="flex items-center gap-2"><span className="text-primary font-medium">✓</span>Регион: <strong>{program.region_name}</strong></div>}
                 <div className="flex items-center gap-2"><span className="text-primary font-medium">✓</span>Вам выдаётся уникальный секретный код</div>
                 <div className="flex items-center gap-2"><span className="text-primary font-medium">✓</span>Личные данные заполняете позже в кабинете</div>
                 <div className="flex items-center gap-2"><span className="text-primary font-medium">✓</span>Сразу получаете свои реферальные ссылки</div>

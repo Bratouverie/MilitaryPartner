@@ -83,22 +83,22 @@ export default function ModeratorCandidates() {
           actorUserId: moderatorProfileId,
         });
 
-        // Повышение уровня программы: первый прямой контракт → owner_program_level = 1
-        // Срабатывает только при CONTRACT_SIGNED и только один раз на программу
+        // ВАРИАНТ C — повышение уровня внутри программы: первый прямой контракт → owner_program_level = 1
+        // Срабатывает один раз на программу. Старая ветка, ancestry, snapshot НЕ меняются.
         if (newStatus === "CONTRACT_SIGNED") {
           try {
-            const programs = await base44.entities.ReferralProgram.filter({ id: selected.source_program_id });
-            const prog = programs[0];
-            // Проверяем прямую связь: кандидат пришёл по форме именно этой программы
+            const allProgs = await base44.entities.ReferralProgram.filter({ owner_user_id: selected.source_referrer_id });
+            const prog = allProgs.find(p => p.id === selected.source_program_id);
             if (prog && (prog.owner_program_level || 0) < 1) {
               const now = new Date().toISOString();
               await base44.entities.ReferralProgram.update(prog.id, {
                 owner_program_level: 1,
                 owner_level_achieved_at: now,
+                contracts_count: (prog.contracts_count || 0) + 1,
               });
               await base44.entities.ActionLog.create({
                 actor_user_id: moderatorProfileId,
-                action_type: "PROGRAM_OWNER_LEVEL_UPGRADED",
+                action_type: "PROGRAM_OWNER_PROMOTED_TO_LEVEL_1",
                 entity_type: "ReferralProgram",
                 entity_id: prog.id,
                 action_payload: JSON.stringify({
@@ -106,7 +106,13 @@ export default function ModeratorCandidates() {
                   candidate_id: selected.id,
                   new_level: 1,
                   achieved_at: now,
+                  note: "ВАРИАНТ_C: старая_ветка_не_изменена, для_нового_роста_создаётся_отдельный_контур",
                 }),
+              }).catch(() => {});
+            } else if (prog) {
+              // Просто обновляем счётчик контрактов
+              await base44.entities.ReferralProgram.update(prog.id, {
+                contracts_count: (prog.contracts_count || 0) + 1,
               }).catch(() => {});
             }
           } catch {}
