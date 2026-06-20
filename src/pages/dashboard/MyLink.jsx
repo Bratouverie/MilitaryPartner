@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "@/components/ui/use-toast";
 import { Copy, Share2, Loader2, QrCode, Plus, GitBranch, Users, ChevronDown, ChevronUp, X, AlertCircle, Info } from "lucide-react";
 import { useProfile } from "@/lib/useProfile.jsx";
-import { validateQuota, canHaveChildren, createChildProgram, MIN_QUOTA, MAX_DIRECT_CHILDREN, QUOTA_STEP } from "@/lib/programUtils";
+import { validateQuota, canHaveChildren, MIN_QUOTA, MAX_DIRECT_CHILDREN, QUOTA_STEP } from "@/lib/programUtils";
 
 export default function MyLink() {
   const { profile } = useProfile();
@@ -81,22 +81,31 @@ export default function MyLink() {
     }
 
     setCreating(true);
-    const { program: child, error: createError } = await createChildProgram({
-      parentProgram,
-      title: childForm.title.trim(),
-      childQuota: quota,
-      ownerUserId: profile.id,
-      actorUserId: profile.id,
-    });
-    setCreating(false);
+    try {
+      const res = await base44.functions.invoke('safeCreateChildProgramByOwner', {
+        parentProgramId: parentProgram.id,
+        title: childForm.title.trim(),
+        childQuota: quota,
+      });
 
-    if (createError) { setChildFormError(createError); return; }
+      if (!res.data?.success) {
+        const msg = res.data?.error || 'Ошибка создания подпрограммы';
+        setChildFormError(msg);
+        setCreating(false);
+        return;
+      }
 
-    toast({ title: "Подпрограмма создана!" });
-    setShowChildForm(null);
-    setChildForm({ title: "", reward_quota: "" });
-    load();
-    loadChildren(parentProgram.id);
+      toast({ title: "Подпрограмма создана!" });
+      setShowChildForm(null);
+      setChildForm({ title: "", reward_quota: "" });
+      load();
+      loadChildren(parentProgram.id);
+    } catch (err) {
+      console.error('[MyLink] Create child failed:', err);
+      setChildFormError("Ошибка: " + (err?.message || "попробуйте ещё раз"));
+    } finally {
+      setCreating(false);
+    }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;

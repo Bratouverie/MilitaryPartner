@@ -48,26 +48,19 @@ export default function AdminPayouts() {
   const updateRewardStatus = async (id, newStatus, reason = null) => {
     setUpdating(id);
     try {
-      const updates = { status: newStatus };
-      if (newStatus === "paid") {
-        updates.paid_at = new Date().toISOString();
-      } else if (newStatus === "rejected" && reason) {
-        updates.admin_comment = reason;
+      const res = await base44.functions.invoke('safeUpdateRewardStatus', {
+        rewardId: id,
+        newStatus,
+        reason,
+      });
+
+      if (!res.data?.success) {
+        const msg = res.data?.error || 'Ошибка';
+        toast({ title: "Ошибка", description: msg, variant: "destructive" });
+        setUpdating(null);
+        return;
       }
-      await base44.entities.Reward.update(id, updates);
-      
-      // Log transition
-      try {
-        await base44.asServiceRole.entities.ActionLog.create({
-          action_type: "REWARD_STATUS_CHANGED",
-          entity_type: "Reward",
-          entity_id: id,
-          action_payload: JSON.stringify({ old_status: rewards.find(r => r.id === id)?.status, new_status: newStatus, reason }),
-        });
-      } catch (logErr) {
-        console.warn("[AdminPayouts] ActionLog failed:", logErr);
-      }
-      
+
       toast({ title: "Статус выплаты обновлён!" });
       setRewards(r => r.map(x => x.id === id ? { ...x, status: newStatus, paid_at: newStatus === "paid" ? new Date().toISOString() : x.paid_at, admin_comment: reason || x.admin_comment } : x));
       setShowRejectForm(null);

@@ -262,52 +262,47 @@ export default function AdminUsers() {
 
     setLoaderFor(u.id, "delete");
     try {
-      // Soft delete: помечаем как inactive/blocked
-      await base44.entities.ReferralProfile.update(u.id, { status: "blocked" });
-      try {
-        await base44.entities.ActionLog.create({
-          actor_user_id: currentId, actor_role: currentRole,
-          action_type: "USER_DELETED",
-          entity_type: "ReferralProfile", entity_id: u.id,
-          action_payload: JSON.stringify({ role: u.role, email: u.email }),
-        });
-      } catch (logErr) {
-        console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      // Через server function (защита последнего super_admin)
+      const res = await base44.functions.invoke('safeBlockUser', { userId: u.id, newStatus: "blocked" });
+      if (!res.data?.success) {
+        toast({ title: "Ошибка удаления", description: res.data?.error, variant: "destructive" });
+        setLoaderFor(u.id, null);
+        return;
       }
       toast({ title: "Пользователь удален" });
       load();
     } catch (err) {
+      console.error('[AdminUsers] Delete failed:', err);
       toast({ title: "Ошибка удаления", variant: "destructive" });
     } finally {
       setLoaderFor(u.id, null);
     }
   };
 
-  // Toggle active/inactive — защита от блокировки последнего super_admin
+  // Toggle active/inactive — через server function (защита последнего super_admin на сервере)
   const toggleStatus = async (u) => {
-    if (u.role === "super_admin" && u.status === "active") {
-      const activeSuperAdmins = users.filter(x => x.role === "super_admin" && x.status === "active");
-      if (activeSuperAdmins.length <= 1) {
-        toast({ title: "Нельзя деактивировать последнего супер-администратора", variant: "destructive" });
-        return;
-      }
-    }
     setLoaderFor(u.id, "status");
     const next = u.status === "active" ? "blocked" : "active";
-    await base44.entities.ReferralProfile.update(u.id, { status: next });
     try {
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "STAFF_STATUS_CHANGED",
-        entity_type: "ReferralProfile", entity_id: u.id,
-        action_payload: JSON.stringify({ old: u.status, new: next }),
-      });
-    } catch (logErr) {
-      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      const res = await base44.functions.invoke('safeBlockUser', { userId: u.id, newStatus: next });
+      if (!res.data?.success) {
+        const errMsg = res.data?.error || "Ошибка";
+        if (res.data?.code === "LAST_SUPER_ADMIN") {
+          toast({ title: "Нельзя деактивировать последнего супер-администратора", variant: "destructive" });
+        } else {
+          toast({ title: "Ошибка", description: errMsg, variant: "destructive" });
+        }
+        setLoaderFor(u.id, null);
+        return;
+      }
+      toast({ title: `Статус изменён: ${next === "active" ? "Активен" : "Заблокирован"}` });
+      setLoaderFor(u.id, null);
+      load();
+    } catch (err) {
+      console.error('[AdminUsers] Toggle failed:', err);
+      toast({ title: "Ошибка", variant: "destructive" });
+      setLoaderFor(u.id, null);
     }
-    toast({ title: `Статус изменён: ${next === "active" ? "Активен" : "Заблокирован"}` });
-    setLoaderFor(u.id, null);
-    load();
   };
 
   const toggleCodeVisibility = async (u) => {
@@ -375,47 +370,26 @@ export default function AdminUsers() {
     setLoaderFor(u.id, null);
   };
 
-  // Regenerate secret code — email отправляется только если указан
+  // Regenerate secret code — через server function
   const regenCode = async (u) => {
     if (!isSuperAdmin) return;
     setLoaderFor(u.id, "regen");
-    const secretCode = genSecretCode();
-    const now = new Date().toISOString();
-    await base44.entities.ReferralProfile.update(u.id, {
-      secret_code: secretCode,
-      masked_secret_code: maskCode(secretCode),
-      secret_code_last_sent_at: now,
-    });
-    if (u.email) {
-      try {
-        await base44.integrations.Core.SendEmail({
-          to: u.email,
-          subject: "Новый секретный код — МилитариПартнер",
-          body: `<p>Ваш новый секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-        });
-      } catch (emailErr) {
-        toast({ 
-          title: "⚠️ Письмо не отправлено", 
-          description: "Код сгенерирован, но письмо не дошло",
-          variant: "destructive" 
-        });
-      }
-    }
     try {
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "SECRET_CODE_REGENERATED",
-        entity_type: "ReferralProfile", entity_id: u.id,
-        action_payload: JSON.stringify({ email: u.email || null }),
-      });
-    } catch (logErr) {
-      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
+      const res = await base44.functions.invoke('safeRegenerateSecret', { userId: u.id });
+      if (!res.data?.success) {
+        toast({ title: "Ошибка", description: res.data?.error, variant: "destructive" });
+        setLoaderFor(u.id, null);
+        return;
+      }
+      setVisibleCodes(prev => ({ ...prev, [u.id]: false }));
+      toast({ title: "Код сгенерирован и отправлен" });
+      setLoaderFor(u.id, null);
+      load();
+    } catch (err) {
+      console.error('[AdminUsers] Regen failed:', err);
+      toast({ title: "Ошибка", variant: "destructive" });
+      setLoaderFor(u.id, null);
     }
-    // Скрываем старый видимый код — данные перезагрузятся
-    setVisibleCodes(prev => ({ ...prev, [u.id]: false }));
-    toast({ title: u.email ? "Новый код сгенерирован и отправлен на email" : "Новый код сгенерирован. Скопируйте и передайте пользователю." });
-    setLoaderFor(u.id, null);
-    load();
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
