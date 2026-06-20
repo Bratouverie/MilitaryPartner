@@ -9,10 +9,6 @@ import moment from "moment";
 import { getStoredRole, getStoredProfileId } from "@/lib/profileSession";
 
 
-const genSecretCode = () => {
-  const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 28 }, () => c[Math.floor(Math.random() * c.length)]).join("");
-};
 const maskCode = (code) => code.slice(0, 4) + "••••••••••••••••••••" + code.slice(-4);
 
 const ROLE_LABELS = {
@@ -337,37 +333,24 @@ export default function AdminUsers() {
     }
   };
 
-  // Resend secret code — только если email указан
+  // Resend secret code — через server function
   const resendCode = async (u) => {
     if (!isSuperAdmin || !u.email) return;
     setLoaderFor(u.id, "resend");
-    const now = new Date().toISOString();
-    await base44.entities.ReferralProfile.update(u.id, { secret_code_last_sent_at: now });
     try {
-      await base44.integrations.Core.SendEmail({
-        to: u.email,
-        subject: "Ваш секретный код — МилитариПартнер",
-        body: `<p>Ваш секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${u.secret_code}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-      });
-    } catch (emailErr) {
-      toast({ 
-        title: "⚠️ Письмо не отправлено", 
-        description: "Передайте код пользователю вручную",
-        variant: "destructive" 
-      });
+      const res = await base44.functions.invoke('safeResendSecretCode', { userId: u.id });
+      if (!res.data?.success) {
+        toast({ title: "Ошибка отправки", description: res.data?.error, variant: "destructive" });
+        setLoaderFor(u.id, null);
+        return;
+      }
+      toast({ title: "Код повторно отправлен на email" });
+      setLoaderFor(u.id, null);
+    } catch (err) {
+      console.error('[AdminUsers] Resend failed:', err);
+      toast({ title: "Ошибка отправки", variant: "destructive" });
+      setLoaderFor(u.id, null);
     }
-    try {
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentId, actor_role: currentRole,
-        action_type: "SECRET_CODE_RESENT",
-        entity_type: "ReferralProfile", entity_id: u.id,
-        action_payload: JSON.stringify({ email: u.email }),
-      });
-    } catch (logErr) {
-      console.warn('[AdminUsers] ActionLog failed (non-critical):', logErr);
-    }
-    toast({ title: "Код повторно отправлен на email" });
-    setLoaderFor(u.id, null);
   };
 
   // Regenerate secret code — через server function

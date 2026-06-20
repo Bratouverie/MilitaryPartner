@@ -75,22 +75,17 @@ export default function AdminPayouts() {
 
   const updateVerification = async (id, status, comment = null) => {
     try {
-      const updates = { verification_status: status };
-      if (comment) updates.admin_comment = comment;
-      await base44.entities.PaymentProfile.update(id, updates);
-      
-      // Log transition
-      try {
-        await base44.asServiceRole.entities.ActionLog.create({
-          action_type: "PAYMENT_PROFILE_STATUS_CHANGED",
-          entity_type: "PaymentProfile",
-          entity_id: id,
-          action_payload: JSON.stringify({ new_status: status, comment }),
-        });
-      } catch (logErr) {
-        console.warn("[AdminPayouts] ActionLog failed:", logErr);
+      const res = await base44.functions.invoke('safeUpdatePaymentProfileStatus', {
+        profileId: id,
+        newStatus: status,
+        comment,
+      });
+
+      if (!res.data?.success) {
+        toast({ title: "Ошибка", description: res.data?.error, variant: "destructive" });
+        return;
       }
-      
+
       toast({ title: `Статус: ${VS_LABELS[status]}` });
       setProfiles(p => p.map(x => x.id === id ? { ...x, verification_status: status, admin_comment: comment || x.admin_comment } : x));
     } catch (e) {

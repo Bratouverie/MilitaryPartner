@@ -18,14 +18,6 @@ import { toast } from "@/components/ui/use-toast";
 import { genUniqueLinkCode, genUniqueCandidateCode, MIN_QUOTA, getPublicTitle, createDefaultInviteSubprogram } from "@/lib/programUtils";
 import { joinFlowDiagnostics, STEPS } from "@/lib/joinFlowDiagnostics";
 
-const genSecretCode = () => {
-  const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 28 }, () => c[Math.floor(Math.random() * c.length)]).join("");
-};
-const genRefCode = () => {
-  const c = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 8 }, () => c[Math.floor(Math.random() * c.length)]).join("");
-};
 const maskCode = (code) => code.slice(0, 4) + "••••••••••••••••••••" + code.slice(-4);
 
 export default function RefLanding() {
@@ -36,6 +28,27 @@ export default function RefLanding() {
   const [done, setDone] = useState(false);
   const [createdProfile, setCreatedProfile] = useState(null);
   const [showCode, setShowCode] = useState(false);
+  const [codeSaved, setCodeSaved] = useState(false);
+
+  // Recovery: restore success-state из sessionStorage на page load/refresh
+  useEffect(() => {
+    const recoveryState = sessionStorage.getItem('join_flow_recovery');
+    if (recoveryState) {
+      try {
+        const { profile, timestamp } = JSON.parse(recoveryState);
+        // Valid if less than 30 minutes old
+        if (Date.now() - timestamp < 30 * 60 * 1000) {
+          setCreatedProfile(profile);
+          setDone(true);
+          setCodeSaved(false); // Reset saved flag on page load
+        } else {
+          sessionStorage.removeItem('join_flow_recovery');
+        }
+      } catch (e) {
+        console.warn('[RefLanding] Recovery parse failed:', e);
+      }
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoadState("loading");
@@ -59,8 +72,10 @@ export default function RefLanding() {
     setSubmitting(true);
 
     try {
-      // Вызываем безопасный server-side join-flow
-      const res = await base44.functions.invoke('safeJoinFlow', { linkCode: code });
+      // Вызываем безопасный server-side join-flow (идемпотентный)
+      // Используем стабильный idempotency key на основе link_code
+      const idempotencyKey = `join_${code}_${Date.now()}`;
+      const res = await base44.functions.invoke('safeJoinFlow', { linkCode: code, idempotencyKey });
       
       if (!res.data?.success) {
         toast({
@@ -74,8 +89,16 @@ export default function RefLanding() {
 
       const { profile: createdProfile, childProgram } = res.data;
       setStoredProfile(createdProfile);
+      
+      // Recovery-state: сохраняем результат в sessionStorage перед переходом на success-screen
+      sessionStorage.setItem('join_flow_recovery', JSON.stringify({
+        profile: createdProfile,
+        timestamp: Date.now(),
+      }));
+      
       setCreatedProfile(createdProfile);
       setDone(true);
+      setCodeSaved(false);
     } catch (error) {
       console.error("[RefLanding] Join flow error:", error);
       toast({
@@ -144,7 +167,7 @@ export default function RefLanding() {
     </div>
   );
 
-  // Экран успеха — показать код + onboarding что делать дальше
+  // Экран успеха — показать код + onboarding + confirm сохранения
   if (done && createdProfile) return (
     <div className="min-h-screen bg-background flex flex-col"><Header />
       <div className="flex-1 px-4 py-12 w-full">
@@ -179,6 +202,21 @@ export default function RefLanding() {
                 </div>
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
                   ⚠️ Сохраните код прямо сейчас. Без него войти не получится.
+                </div>
+
+                {/* Confirm сохранения кода */}
+                <div className="mt-4 pt-4 border-t border-border">
+                  <label className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <input 
+                      type="checkbox" 
+                      checked={codeSaved} 
+                      onChange={(e) => setCodeSaved(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-blue-600"
+                    />
+                    <span className="text-xs text-blue-900">
+                      ✓ Я сохранил код и понимаю, что без него войти не смогу
+                    </span>
+                  </label>
                 </div>
               </div>
 
@@ -226,11 +264,20 @@ export default function RefLanding() {
             </div>
           </div>
 
-          {/* CTA */}
+          {/* CTA — доступна только после подтверждения кода */}
           <div className="text-center">
-            <Button onClick={() => { window.location.href = "/dashboard"; }} className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 rounded-xl px-8 text-base">
+            <Button 
+              onClick={() => { window.location.href = "/dashboard"; }} 
+              disabled={!codeSaved}
+              className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 rounded-xl px-8 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               Перейти в кабинет →
             </Button>
+            {!codeSaved && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Сначала подтвердите, что код сохранён ↑
+              </p>
+            )}
           </div>
         </div>
       </div>

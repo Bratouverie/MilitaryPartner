@@ -28,10 +28,46 @@ Deno.serve(async (req) => {
 
   try {
     const base44 = createClientFromRequest(req);
-    const { linkCode } = await req.json();
+    const { linkCode, idempotencyKey } = await req.json();
 
     if (!linkCode) {
       return Response.json({ error: "linkCode required" }, { status: 400 });
+    }
+
+    // Idempotency: check if already processed with this key
+    if (idempotencyKey) {
+      const logs = await base44.asServiceRole.entities.ActionLog.filter({
+        action_type: "JOIN_FLOW_COMPLETE",
+        action_payload: JSON.stringify({ idempotency_key: idempotencyKey }),
+      });
+      if (logs.length > 0) {
+        // Parse payload to extract profile/program info
+        try {
+          const payload = JSON.parse(logs[0].action_payload);
+          const profile = await base44.asServiceRole.entities.ReferralProfile.get(payload.profile_id);
+          const childProgram = await base44.asServiceRole.entities.ReferralProgram.get(payload.child_program_id);
+          if (profile && childProgram) {
+            return Response.json({
+              success: true,
+              isDuplicate: true,
+              profile: {
+                id: profile.id,
+                secret_code: profile.secret_code,
+                masked_secret_code: profile.masked_secret_code,
+                referral_code: profile.referral_code,
+              },
+              childProgram: {
+                id: childProgram.id,
+                link_code: childProgram.link_code,
+                candidate_form_code: childProgram.candidate_form_code,
+                reward_quota: childProgram.reward_quota,
+              },
+            });
+          }
+        } catch (e) {
+          console.warn("[safeJoinFlow] Duplicate recovery failed:", e);
+        }
+      }
     }
 
     // Шаг 0: Валидация программы
@@ -165,13 +201,15 @@ Deno.serve(async (req) => {
       warnings.push("Parent counters not updated");
     }
 
-    // Шаг 6: ActionLog
+    // Шаг 6: ActionLog с idempotency info
     try {
       await base44.asServiceRole.entities.ActionLog.create({
         action_type: "JOIN_FLOW_COMPLETE",
         entity_type: "ReferralProfile",
         entity_id: profile.id,
         action_payload: JSON.stringify({
+          idempotency_key: idempotencyKey,
+          profile_id: profile.id,
           parent_program_id: parentProgram.id,
           child_program_id: childProgram.id,
           child_quota: childQuota,
