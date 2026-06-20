@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
-import { Shield, Loader2, ShieldCheck } from "lucide-react";
-import { setStoredProfile } from "@/lib/profileSession";
+import { Shield, Loader2, ShieldCheck, Lock } from "lucide-react";
+import { setStoredProfile, getStoredProfileId, getStoredRole } from "@/lib/profileSession";
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -15,42 +15,49 @@ const maskCode = (code) => code.slice(0, 4) + "•••••••••••
 
 export default function AdminBootstrap() {
   const navigate = useNavigate();
-  const [step, setStep] = useState("check"); // check | form | done
-  const [existingAdmin, setExistingAdmin] = useState(null);
+  const [step, setStep] = useState("check"); // check | blocked | form | done
   const [form, setForm] = useState({ email: "", name: "" });
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
 
-  // Auto-check: try to get current BASE44 owner/admin user first
   useEffect(() => {
     const autoCheck = async () => {
       try {
-        // Check if super_admin already exists in ReferralProfile
+        // If already logged in as super_admin — allow recovery mode
+        const currentRole = getStoredRole();
+        const currentId = getStoredProfileId();
+
+        if (currentRole === "super_admin" && currentId) {
+          // Already super_admin — allow recovery/regeneration from here
+          setStep("form");
+          setChecking(false);
+          return;
+        }
+
+        // Check if any super_admin exists — if yes, block public access
         const admins = await base44.entities.ReferralProfile.filter({ role: "super_admin", status: "active" });
         if (admins.length > 0) {
-          setExistingAdmin(admins[0]);
-          setStep("exists");
+          // super_admin exists — block form, do NOT reveal email
+          setStep("blocked");
           setChecking(false);
           return;
         }
-        // Also check admin role
-        const adminProfiles = await base44.entities.ReferralProfile.filter({ role: "admin", status: "active" });
-        if (adminProfiles.length > 0) {
-          setExistingAdmin(adminProfiles[0]);
-          setStep("exists");
-          setChecking(false);
-          return;
-        }
-      } catch {}
-      // Try to get base44 authenticated user for pre-fill
-      try {
-        const me = await base44.auth.me();
-        if (me?.email) setForm(f => ({ ...f, email: me.email, name: me.full_name || "" }));
-      } catch {}
-      setStep("form");
-      setChecking(false);
+
+        // No super_admin at all — first run, allow bootstrap
+        // Try to pre-fill from BASE44 owner session
+        try {
+          const me = await base44.auth.me();
+          if (me?.email) setForm(f => ({ ...f, email: me.email, name: me.full_name || "" }));
+        } catch {}
+
+        setStep("form");
+      } catch {
+        setStep("form"); // on error — allow bootstrap (worst case: first run with network issue)
+      } finally {
+        setChecking(false);
+      }
     };
     autoCheck();
   }, []);
@@ -60,9 +67,16 @@ export default function AdminBootstrap() {
     setError("");
     setLoading(true);
     try {
+      // Double-check: only allow if no super_admin exists OR current user is already super_admin
+      const currentRole = getStoredRole();
+      const admins = await base44.entities.ReferralProfile.filter({ role: "super_admin", status: "active" });
+      if (admins.length > 0 && currentRole !== "super_admin") {
+        setError("Администратор уже существует. Используйте страницу входа.");
+        return;
+      }
+
       const emailLower = form.email.trim().toLowerCase();
       const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
-
       const secretCode = genSecretCode();
       const maskedCode = maskCode(secretCode);
       const now = new Date().toISOString();
@@ -74,7 +88,7 @@ export default function AdminBootstrap() {
           full_name: form.name || existing[0].full_name || "Администратор",
           secret_code: secretCode, masked_secret_code: maskedCode, secret_code_last_sent_at: now,
         });
-        profile = { ...existing[0], role: "super_admin", secret_code: secretCode };
+        profile = { ...existing[0], role: "super_admin", secret_code: secretCode, email: emailLower };
       } else {
         profile = await base44.entities.ReferralProfile.create({
           email: emailLower,
@@ -93,7 +107,7 @@ export default function AdminBootstrap() {
       }).catch(() => {});
 
       await base44.entities.ActionLog.create({
-        actor_role: "super_admin", action_type: "ADMIN_BOOTSTRAP",
+        actor_role: "super_admin", action_type: "ADMIN_BOOTSTRAP_CREATED",
         entity_type: "ReferralProfile", entity_id: profile.id,
         action_payload: JSON.stringify({ email: emailLower }),
       }).catch(() => {});
@@ -103,11 +117,9 @@ export default function AdminBootstrap() {
       setStep("done");
     } catch (err) {
       setError("Ошибка: " + (err?.message || "попробуйте ещё раз"));
-    } finally { setLoading(false); }
-  };
-
-  const handleLoginExisting = () => {
-    navigate("/secret-login");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (checking) return (
@@ -133,33 +145,53 @@ export default function AdminBootstrap() {
             </div>
           </div>
 
-          {step === "exists" && existingAdmin && (
+          {/* BLOCKED: super_admin exists, anonymous user — show nothing sensitive */}
+          {step === "blocked" && (
             <div className="bg-card border border-border rounded-2xl p-6 text-center">
-              <div className="text-green-600 font-heading font-bold text-lg mb-2">✓ Администратор уже существует</div>
-              <p className="text-sm text-muted-foreground mb-2">Email: <strong>{existingAdmin.email}</strong></p>
-              <p className="text-sm text-muted-foreground mb-6">Войдите через секретный код, который был отправлен на ваш email.</p>
-              <Button onClick={handleLoginExisting} className="w-full bg-primary font-bold">
+              <Lock className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+              <h1 className="font-heading text-xl font-bold mb-2">Доступ ограничен</h1>
+              <p className="text-sm text-muted-foreground mb-6">
+                Система уже настроена. Войдите через секретный код.
+              </p>
+              <Button onClick={() => navigate("/secret-login")} className="w-full bg-primary font-bold">
                 Перейти ко входу
               </Button>
             </div>
           )}
 
+          {/* FORM: first run OR current super_admin recovery */}
           {step === "form" && (
             <>
-              <h1 className="font-heading text-2xl font-bold text-center mb-2">Создать аккаунт администратора</h1>
+              <h1 className="font-heading text-2xl font-bold text-center mb-2">
+                {getStoredRole() === "super_admin" ? "Восстановление доступа" : "Первоначальная настройка"}
+              </h1>
               <p className="text-muted-foreground text-center text-sm mb-8">
-                Первоначальная настройка — введите email администратора
+                Создание аккаунта главного администратора системы
               </p>
               <form onSubmit={handleSubmit} className="space-y-4 bg-card border border-border rounded-2xl p-6">
                 <div>
                   <Label>Email администратора</Label>
-                  <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required placeholder="admin@example.com" />
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                    required
+                    placeholder="admin@example.com"
+                  />
                 </div>
                 <div>
                   <Label>Имя (необязательно)</Label>
-                  <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Администратор" />
+                  <Input
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Администратор"
+                  />
                 </div>
-                {error && <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">{error}</div>}
+                {error && (
+                  <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">
+                    {error}
+                  </div>
+                )}
                 <Button type="submit" disabled={loading} className="w-full bg-primary font-bold h-12 rounded-xl">
                   {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Создать аккаунт администратора"}
                 </Button>
@@ -170,6 +202,7 @@ export default function AdminBootstrap() {
             </>
           )}
 
+          {/* DONE */}
           {step === "done" && result && (
             <div className="bg-card border border-border rounded-2xl p-6 text-center">
               <div className="text-green-600 font-heading font-bold text-lg mb-2">✓ Аккаунт создан!</div>
