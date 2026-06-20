@@ -61,9 +61,12 @@ export default function AdminMasterLinks() {
       setRootPrograms(roots.sort((a, b) => new Date(b.created_date) - new Date(a.created_date)));
       setAllPrograms(all);
       setModerators(mods);
-    } catch {}
+    } catch (e) {
+      console.error("[AdminMasterLinks] Load failed:", e);
+      toast({ title: "Ошибка загрузки программ", variant: "destructive" });
+    }
     setLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -110,23 +113,31 @@ export default function AdminMasterLinks() {
         program_category: form.program_category || undefined,
       });
 
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentProfile?.id,
-        actor_role: currentProfile?.role,
-        action_type: "ROOT_PROGRAM_CREATED",
-        entity_type: "ReferralProgram",
-        entity_id: program.id,
-        action_payload: JSON.stringify({ title: form.title, max_reward: quota, moderator_id: form.moderator_id }),
-      }).catch(() => {});
-
-      if (form.moderator_id) {
+      try {
         await base44.entities.ActionLog.create({
           actor_user_id: currentProfile?.id,
-          action_type: "PROGRAM_MODERATOR_ASSIGNED",
+          actor_role: currentProfile?.role,
+          action_type: "ROOT_PROGRAM_CREATED",
           entity_type: "ReferralProgram",
           entity_id: program.id,
-          action_payload: JSON.stringify({ moderator_id: form.moderator_id }),
-        }).catch(() => {});
+          action_payload: JSON.stringify({ title: form.title, max_reward: quota, moderator_id: form.moderator_id }),
+        });
+      } catch (logErr) {
+        console.warn("[AdminMasterLinks] ActionLog creation failed (non-critical):", logErr);
+      }
+
+      if (form.moderator_id) {
+        try {
+          await base44.entities.ActionLog.create({
+            actor_user_id: currentProfile?.id,
+            action_type: "PROGRAM_MODERATOR_ASSIGNED",
+            entity_type: "ReferralProgram",
+            entity_id: program.id,
+            action_payload: JSON.stringify({ moderator_id: form.moderator_id }),
+          });
+        } catch (logErr) {
+          console.warn("[AdminMasterLinks] ActionLog moderator assignment failed (non-critical):", logErr);
+        }
       }
 
       toast({ title: "Программа создана!" });
@@ -141,9 +152,14 @@ export default function AdminMasterLinks() {
   };
 
   const toggleActive = async (prog) => {
-    await base44.entities.ReferralProgram.update(prog.id, { is_active: !prog.is_active });
-    toast({ title: prog.is_active ? "Программа отключена" : "Программа включена" });
-    load();
+    try {
+      await base44.entities.ReferralProgram.update(prog.id, { is_active: !prog.is_active });
+      toast({ title: prog.is_active ? "Программа отключена" : "Программа включена" });
+      load();
+    } catch (e) {
+      console.error("[AdminMasterLinks] Toggle active failed:", e);
+      toast({ title: "Ошибка", variant: "destructive" });
+    }
   };
 
   // Lifecycle: active / frozen / replaced / archived
@@ -161,17 +177,24 @@ export default function AdminMasterLinks() {
     if (newStatus === "archived") { updates.archived_at = now; updates.is_active = false; }
     try {
       await base44.entities.ReferralProgram.update(prog.id, updates);
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentProfile?.id,
-        action_type: "PROGRAM_STATUS_CHANGED",
-        entity_type: "ReferralProgram",
-        entity_id: prog.id,
-        action_payload: JSON.stringify({ old: prog.program_status || "active", new: newStatus }),
-      }).catch(() => {});
+      try {
+        await base44.entities.ActionLog.create({
+          actor_user_id: currentProfile?.id,
+          action_type: "PROGRAM_STATUS_CHANGED",
+          entity_type: "ReferralProgram",
+          entity_id: prog.id,
+          action_payload: JSON.stringify({ old: prog.program_status || "active", new: newStatus }),
+        });
+      } catch (logErr) {
+        console.warn("[AdminMasterLinks] ActionLog status change failed (non-critical):", logErr);
+      }
       toast({ title: `Статус изменён: ${LIFECYCLE_LABELS[newStatus]}` });
       setChangingStatus(null);
       load();
-    } catch { toast({ title: "Ошибка", variant: "destructive" }); }
+    } catch (e) {
+      console.error("[AdminMasterLinks] Status change failed:", e);
+      toast({ title: "Ошибка", variant: "destructive" });
+    }
     finally { setSavingStatus(false); }
   };
 
@@ -180,17 +203,22 @@ export default function AdminMasterLinks() {
     try {
       const old = prog.assigned_moderator_id;
       await base44.entities.ReferralProgram.update(prog.id, { assigned_moderator_id: newModeratorId || null });
-      await base44.entities.ActionLog.create({
-        actor_user_id: currentProfile?.id,
-        action_type: "PROGRAM_MODERATOR_CHANGED",
-        entity_type: "ReferralProgram",
-        entity_id: prog.id,
-        action_payload: JSON.stringify({ old_moderator_id: old, new_moderator_id: newModeratorId }),
-      }).catch(() => {});
+      try {
+        await base44.entities.ActionLog.create({
+          actor_user_id: currentProfile?.id,
+          action_type: "PROGRAM_MODERATOR_CHANGED",
+          entity_type: "ReferralProgram",
+          entity_id: prog.id,
+          action_payload: JSON.stringify({ old_moderator_id: old, new_moderator_id: newModeratorId }),
+        });
+      } catch (logErr) {
+        console.warn("[AdminMasterLinks] ActionLog moderator change failed (non-critical):", logErr);
+      }
       toast({ title: "Модератор обновлён" });
       setChangingModerator(null);
       load();
-    } catch {
+    } catch (e) {
+      console.error("[AdminMasterLinks] Moderator change failed:", e);
       toast({ title: "Ошибка", variant: "destructive" });
     } finally {
       setSavingMod(false);
