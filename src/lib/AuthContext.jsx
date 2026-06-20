@@ -1,7 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
-import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
 
 const AuthContext = createContext();
 
@@ -17,18 +16,19 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const checkAppState = async () => {
       try {
-        const appClient = createAxiosClient({
-          baseURL: `/api/apps/public`,
-          headers: { 'X-App-Id': appParams.appId },
-          token: appParams.token,
-          interceptResponses: true,
+        const appId = appParams.appId;
+        if (!appId) { setIsLoadingPublicSettings(false); return; }
+        const res = await fetch(`/api/apps/public/prod/public-settings/by-id/${appId}`, {
+          headers: { 'X-App-Id': appId },
         });
-        await appClient.get(`/prod/public-settings/by-id/${appParams.appId}`);
-      } catch (appError) {
-        if (appError.status === 403 && appError.data?.extra_data?.reason === 'user_not_registered') {
-          setAuthError({ type: 'user_not_registered', message: 'User not registered' });
+        if (res.status === 403) {
+          const data = await res.json().catch(() => ({}));
+          if (data?.extra_data?.reason === 'user_not_registered') {
+            setAuthError({ type: 'user_not_registered', message: 'User not registered' });
+          }
         }
-        // auth_required и unknown — не блокируем, публичные страницы работают
+      } catch {
+        // Сеть или config ошибка — не блокируем публичные страницы
       } finally {
         setIsLoadingPublicSettings(false);
       }

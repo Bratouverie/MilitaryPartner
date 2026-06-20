@@ -5,13 +5,12 @@
  */
 import React, { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, Loader2, AlertTriangle, RefreshCw, CheckCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { getPublicTitle } from "@/lib/programUtils";
 
 const MOTIVATIONS = [
@@ -158,7 +157,7 @@ export default function CandidateForm() {
           </div>
           <h1 className="font-heading text-2xl font-bold mb-3">Анкета отправлена!</h1>
           <p className="text-muted-foreground mb-2">Куратор свяжется с вами в ближайшее время для уточнения деталей.</p>
-          <p className="text-sm text-muted-foreground">Программа: <strong>{program?.title}</strong></p>
+          <p className="text-sm text-muted-foreground">Программа: <strong>{getPublicTitle(program)}</strong></p>
         </div>
       </div>
     </div>

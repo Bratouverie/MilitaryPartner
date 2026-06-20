@@ -69,19 +69,19 @@ const AuthenticatedApp = () => {
       <Route path="/register-referrer" element={<RegisterReferrer />} />
       <Route path="/ref/:code" element={<RefLanding />} />
       <Route path="/join/:code" element={<RefLanding />} />
-      <Route path="/candidate/:formCode" element={<CandidateForm />} />
       <Route path="/candidate/thank-you" element={<CandidateThankYou />} />
+      <Route path="/candidate/:formCode" element={<CandidateForm />} />
       <Route path="/secret-login" element={<SecretCodeLogin />} />
       <Route path="/resend-code" element={<ResendCode />} />
       <Route path="/admin-bootstrap" element={<AdminBootstrap />} />
 
       {/* Legacy auth redirects — все старые маршруты направляются в новый flow */}
       <Route path="/login" element={<Navigate to="/secret-login" replace />} />
-      <Route path="/register" element={<Navigate to="/register-referrer" replace />} />
+      <Route path="/register" element={<Navigate to="/secret-login" replace />} />
       <Route path="/forgot-password" element={<Navigate to="/resend-code" replace />} />
       <Route path="/reset-password" element={<Navigate to="/secret-login" replace />} />
       <Route path="/Login" element={<Navigate to="/secret-login" replace />} />
-      <Route path="/Register" element={<Navigate to="/register-referrer" replace />} />
+      <Route path="/Register" element={<Navigate to="/secret-login" replace />} />
 
       {/* Referrer dashboard — guarded by role */}
       <Route path="/dashboard" element={<RoleGuard allowedRoles={["referrer"]}><DashboardLayout /></RoleGuard>}>
