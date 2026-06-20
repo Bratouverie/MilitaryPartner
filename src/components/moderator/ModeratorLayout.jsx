@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { clearStoredProfile } from "@/lib/profileSession";
 import { ProfileProvider } from "@/lib/useProfile.jsx";
-import { Shield, LayoutDashboard, Users, ClipboardList, LogOut, Menu, X } from "lucide-react";
+import { Shield, LayoutDashboard, Users, ClipboardList, LogOut, Menu, X, ExternalLink } from "lucide-react";
 
 const navItems = [
   { path: "/moderator", icon: LayoutDashboard, label: "Панель" },
@@ -50,7 +50,10 @@ export default function ModeratorLayout() {
           <nav className="flex-1 px-3 space-y-0.5 mt-4">
             {navItems.map(item => <NavLink key={item.path} item={item} />)}
           </nav>
-          <div className="p-3 border-t border-sidebar-border">
+          <div className="p-3 border-t border-sidebar-border space-y-1">
+            <a href="/" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent w-full transition-colors">
+              <ExternalLink className="w-4 h-4" /> Открыть сайт
+            </a>
             <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent w-full">
               <LogOut className="w-4 h-4" /> Выход
             </button>
@@ -82,7 +85,10 @@ export default function ModeratorLayout() {
                 <nav className="flex-1 px-3 space-y-0.5 mt-4">
                   {navItems.map(item => <NavLink key={item.path} item={item} onClick={() => setMobileOpen(false)} />)}
                 </nav>
-                <div className="p-3 border-t border-sidebar-border">
+                <div className="p-3 border-t border-sidebar-border space-y-1">
+                  <a href="/" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent w-full transition-colors">
+                    <ExternalLink className="w-4 h-4" /> Открыть сайт
+                  </a>
                   <button onClick={handleLogout} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent w-full">
                     <LogOut className="w-4 h-4" /> Выход
                   </button>

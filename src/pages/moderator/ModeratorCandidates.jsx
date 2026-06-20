@@ -8,19 +8,8 @@ import { useProfile } from "@/lib/useProfile.jsx";
 import { Loader2, Search, Plus, X, MessageSquare, Clock } from "lucide-react";
 import moment from "moment";
 
-const STATUSES = ["NEW","QUESTIONNAIRE_FILLED","CURATOR_CALL_SCHEDULED","CURATOR_CALL_DONE","REGION_AGREED","TRAVEL_ARRANGED","ARRIVED","MEDICAL_EXAM_DONE","CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY","REJECTED","DROPPED"];
-const STATUS_LABELS = {
-  NEW:"Новый", QUESTIONNAIRE_FILLED:"Анкета заполнена", CURATOR_CALL_SCHEDULED:"Звонок запланирован",
-  CURATOR_CALL_DONE:"Звонок проведён", REGION_AGREED:"Регион согласован", TRAVEL_ARRANGED:"Поездка организована",
-  ARRIVED:"Прибыл", MEDICAL_EXAM_DONE:"Медкомиссия", CONTRACT_SIGNED:"Контракт подписан",
-  UNIT_ASSIGNED:"В части", RETURNED_HEALTHY:"Вернулся здоров", REJECTED:"Отказал", DROPPED:"Отвалился",
-};
-const STATUS_COLORS = {
-  NEW:"bg-gray-100 text-gray-700", QUESTIONNAIRE_FILLED:"bg-blue-100 text-blue-700",
-  CONTRACT_SIGNED:"bg-green-100 text-green-700", UNIT_ASSIGNED:"bg-green-200 text-green-800",
-  REJECTED:"bg-red-100 text-red-700", CURATOR_CALL_SCHEDULED:"bg-indigo-100 text-indigo-700",
-  ARRIVED:"bg-teal-100 text-teal-700", MEDICAL_EXAM_DONE:"bg-emerald-100 text-emerald-700",
-};
+import { STATUSES_ORDERED, statusLabel, statusColor } from "@/lib/statusLabels";
+const STATUSES = STATUSES_ORDERED;
 const NOTE_TYPE_LABELS = { call:"Звонок", logistics:"Логистика", medical:"Медицина", agreement:"Договор", internal:"Внутренняя", public:"Публичная" };
 
 export default function ModeratorCandidates() {
@@ -202,12 +191,12 @@ export default function ModeratorCandidates() {
             <div className="p-6">
               {activeTab === "status" && (
                 <div className="space-y-4">
-                  <div className="text-xs text-muted-foreground">Текущий: <span className="font-medium text-foreground">{STATUS_LABELS[selected.current_status] || selected.current_status}</span></div>
+                  <div className="text-xs text-muted-foreground">Текущий: <span className="font-medium text-foreground">{statusLabel(selected.current_status)}</span></div>
                   <div>
                     <label className="text-sm font-medium block mb-1">Новый статус</label>
                     <select className="w-full h-10 px-2 border border-input rounded-md bg-background text-sm"
                       value={newStatus} onChange={e => setNewStatus(e.target.value)}>
-                      {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                      {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
                     </select>
                   </div>
                   <div>
@@ -226,9 +215,9 @@ export default function ModeratorCandidates() {
                   {statusHistory.map(h => (
                     <div key={h.id} className="border border-border rounded-lg p-3 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-muted-foreground line-through">{STATUS_LABELS[h.old_status] || h.old_status}</span>
+                        <span className="text-muted-foreground line-through">{statusLabel(h.old_status)}</span>
                         <span>→</span>
-                        <span className="font-medium">{STATUS_LABELS[h.new_status] || h.new_status}</span>
+                        <span className="font-medium">{statusLabel(h.new_status)}</span>
                       </div>
                       {h.change_comment && <p className="text-muted-foreground mt-1">{h.change_comment}</p>}
                       <div className="text-xs text-muted-foreground mt-1">{moment(h.created_date).format("DD.MM.YYYY HH:mm")}</div>
@@ -302,8 +291,8 @@ export default function ModeratorCandidates() {
                 </div>
               )}
             </div>
-            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[c.current_status] || "bg-gray-100 text-gray-600"}`}>
-              {STATUS_LABELS[c.current_status] || c.current_status}
+            <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusColor(c.current_status)}`}>
+              {statusLabel(c.current_status)}
             </span>
           </div>
         ))}

@@ -23,9 +23,20 @@ export default function PublicHeader() {
   const ctaLabel = () => {
     if (!isLoggedIn) return "Войти";
     if (role === "referrer") return "Личный кабинет";
-    if (role === "moderator") return "Кабинет куратора";
-    if (role === "admin" || role === "super_admin") return "Управлять";
+    if (role === "moderator") return "Панель куратора";
+    if (role === "admin" || role === "super_admin") return "Панель управления";
     return "Войти";
+  };
+
+  const backPanelLabel = () => {
+    if (role === "moderator") return "← В панель куратора";
+    if (role === "admin" || role === "super_admin") return "← В админку";
+    return null;
+  };
+  const backPanelDest = () => {
+    if (role === "moderator") return "/moderator";
+    if (role === "admin" || role === "super_admin") return "/admin";
+    return null;
   };
 
   return (
@@ -43,6 +54,11 @@ export default function PublicHeader() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
+          {backPanelLabel() && (
+            <Link to={backPanelDest()}>
+              <Button size="sm" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10 font-medium text-xs">{backPanelLabel()}</Button>
+            </Link>
+          )}
           <Link to={ctaDest()}>
             <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90 font-medium">{ctaLabel()}</Button>
           </Link>

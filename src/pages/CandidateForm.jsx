@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Shield, Loader2, AlertTriangle, RefreshCw, CheckCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { getPublicTitle } from "@/lib/programUtils";
 
 const MOTIVATIONS = [
   { value: "want_to_serve", label: "Хочу служить Родине", icon: "🎖️" },
@@ -24,6 +26,7 @@ const STATUS_LABELS = {
 
 export default function CandidateForm() {
   const { formCode } = useParams();
+  const navigate = useNavigate();
   const [program, setProgram] = useState(null);
   const [loadState, setLoadState] = useState("loading");
   const [step, setStep] = useState(1);
@@ -108,7 +111,10 @@ export default function CandidateForm() {
         candidates_count: (program.candidates_count || 0) + 1,
       }).catch(() => {});
 
-      setDone(true);
+      // Redirect на отдельную thank-you страницу
+      const publicTitle = encodeURIComponent(getPublicTitle(program));
+      const region = encodeURIComponent(program.region_name || "");
+      navigate(`/candidate/thank-you?program=${publicTitle}&region=${region}`);
     } catch { setError("Ошибка при отправке анкеты. Попробуйте ещё раз."); }
     finally { setSubmitting(false); }
   };
@@ -163,7 +169,7 @@ export default function CandidateForm() {
       <Header />
       <div className="flex-1 max-w-lg mx-auto w-full px-4 py-10">
         <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 mb-6">
-          <div className="text-sm font-medium text-primary">{program.title}</div>
+          <div className="text-sm font-medium text-primary">{getPublicTitle(program)}</div>
           <div className="text-xs text-muted-foreground mt-0.5">Заполните анкету — куратор свяжется для уточнения деталей</div>
         </div>
 

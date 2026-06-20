@@ -17,6 +17,7 @@ import FAQPage from '@/pages/FAQPage';
 import RegisterReferrer from '@/pages/RegisterReferrer';
 import RefLanding from '@/pages/RefLanding';
 import CandidateForm from '@/pages/CandidateForm';
+import CandidateThankYou from '@/pages/CandidateThankYou';
 import SecretCodeLogin from '@/pages/SecretCodeLogin';
 import ResendCode from '@/pages/ResendCode';
 import AdminBootstrap from '@/pages/AdminBootstrap';
@@ -42,6 +43,7 @@ import AdminRewards from '@/pages/admin/AdminRewards';
 import AdminPayouts from '@/pages/admin/AdminPayouts';
 import AdminAnalytics from '@/pages/admin/AdminAnalytics';
 import AdminLogs from '@/pages/admin/AdminLogs';
+import AdminCleanup from '@/pages/admin/AdminCleanup';
 
 // Moderator
 import ModeratorLayout from '@/components/moderator/ModeratorLayout';
@@ -68,6 +70,7 @@ const AuthenticatedApp = () => {
       <Route path="/ref/:code" element={<RefLanding />} />
       <Route path="/join/:code" element={<RefLanding />} />
       <Route path="/candidate/:formCode" element={<CandidateForm />} />
+      <Route path="/candidate/thank-you" element={<CandidateThankYou />} />
       <Route path="/secret-login" element={<SecretCodeLogin />} />
       <Route path="/resend-code" element={<ResendCode />} />
       <Route path="/admin-bootstrap" element={<AdminBootstrap />} />
@@ -102,6 +105,7 @@ const AuthenticatedApp = () => {
         <Route path="payouts" element={<AdminPayouts />} />
         <Route path="analytics" element={<AdminAnalytics />} />
         <Route path="logs" element={<AdminLogs />} />
+        <Route path="cleanup" element={<AdminCleanup />} />
       </Route>
 
       {/* Moderator CRM — guarded by role */}

@@ -176,7 +176,22 @@ export async function createRewardChain({ candidateId, programId, rewardType = "
  * Создаёт дочернюю ReferralProgram + ProgramMembership.
  * Все проверки централизованы здесь.
  */
-export async function createChildProgram({ parentProgram, title, childQuota, ownerUserId, actorUserId }) {
+/**
+ * Возвращает публичное название программы (без внутренних префиксов).
+ * Использовать на join page, в анкете кандидата, success экранах.
+ */
+export function getPublicTitle(program) {
+  return program?.public_program_title || program?.base_program_title || program?.title || "";
+}
+
+/**
+ * Возвращает внутреннее название программы для admin/moderator UI.
+ */
+export function getInternalTitle(program) {
+  return program?.internal_display_title || program?.title || "";
+}
+
+export async function createChildProgram({ parentProgram, title: childPrefixTitle, childQuota, ownerUserId, actorUserId }) {
   const { valid, error } = validateQuota(childQuota, parentProgram.reward_quota);
   if (!valid) return { program: null, error };
 
@@ -190,10 +205,23 @@ export async function createChildProgram({ parentProgram, title, childQuota, own
   try { ancestryIds = JSON.parse(parentProgram.ancestry_path_ids || "[]"); } catch {}
   ancestryIds.push(parentProgram.id);
   const ancestryJson = JSON.stringify(ancestryIds);
-  const ancestryText = (parentProgram.ancestry_path_text || parentProgram.title) + " / " + title;
+  const ancestryText = (parentProgram.ancestry_path_text || parentProgram.base_program_title || parentProgram.title) + " / " + childPrefixTitle;
+
+  // Базовое название наследуется от родителя
+  const baseProgramTitle = parentProgram.base_program_title || parentProgram.title || "";
+  // Внутреннее = базовое + " — " + префикс реферала
+  const internalDisplayTitle = childPrefixTitle
+    ? `${baseProgramTitle} — ${childPrefixTitle}`
+    : baseProgramTitle;
+  // Публичное = только базовое (без внутренних префиксов!)
+  const publicProgramTitle = baseProgramTitle;
 
   const child = await base44.entities.ReferralProgram.create({
-    title,
+    title: internalDisplayTitle, // legacy compat
+    base_program_title: baseProgramTitle,
+    child_prefix_title: childPrefixTitle,
+    internal_display_title: internalDisplayTitle,
+    public_program_title: publicProgramTitle,
     link_code: linkCode,
     candidate_form_code: formCode,
     owner_user_id: ownerUserId,

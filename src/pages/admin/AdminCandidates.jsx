@@ -5,15 +5,9 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Search, ChevronDown, X } from "lucide-react";
 import moment from "moment";
+import { STATUSES_ORDERED, statusLabel, statusColor } from "@/lib/statusLabels";
 
-const STATUSES = ["NEW","QUESTIONNAIRE_FILLED","CURATOR_CALL_SCHEDULED","CURATOR_CALL_DONE","REGION_AGREED","TRAVEL_ARRANGED","ARRIVED","MEDICAL_EXAM_DONE","CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY","INJURED_LIGHT","INJURED_HEAVY","KIA","REJECTED","DROPPED"];
-const STATUS_COLORS = {
-  NEW:"bg-gray-100 text-gray-700", QUESTIONNAIRE_FILLED:"bg-blue-100 text-blue-700",
-  CONTRACT_SIGNED:"bg-green-100 text-green-700", UNIT_ASSIGNED:"bg-green-200 text-green-800",
-  RETURNED_HEALTHY:"bg-lime-100 text-lime-700", REJECTED:"bg-red-100 text-red-700",
-  DROPPED:"bg-orange-100 text-orange-700", MEDICAL_EXAM_DONE:"bg-teal-100 text-teal-700",
-  KIA:"bg-gray-800 text-white",
-};
+const STATUSES = STATUSES_ORDERED;
 
 export default function AdminCandidates() {
   const { toast } = useToast();
@@ -76,7 +70,7 @@ export default function AdminCandidates() {
         <select className="h-10 px-3 border border-input rounded-md bg-background text-sm"
           value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="all">Все статусы</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
+          {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </select>
       </div>
 
@@ -87,13 +81,13 @@ export default function AdminCandidates() {
               <h2 className="font-heading font-bold">{selected.full_name}</h2>
               <button onClick={() => setSelected(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
-            <div className="mb-4 text-sm text-muted-foreground">Текущий статус: <strong>{selected.current_status?.replace(/_/g," ")}</strong></div>
+            <div className="mb-4 text-sm text-muted-foreground">Текущий статус: <strong>{statusLabel(selected.current_status)}</strong></div>
             <div className="mb-3">
               <label className="text-sm font-medium mb-1 block">Новый статус</label>
               <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm"
                 value={newStatus} onChange={e => setNewStatus(e.target.value)}>
                 <option value="">Выберите…</option>
-                {STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g," ")}</option>)}
+                {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
               </select>
             </div>
             <div className="mb-4">
@@ -121,8 +115,8 @@ export default function AdminCandidates() {
                 <td className="px-4 py-3 font-medium">{c.full_name}</td>
                 <td className="px-4 py-3 text-muted-foreground">{c.phone}</td>
                 <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[c.current_status] || "bg-gray-100 text-gray-600"}`}>
-                    {c.current_status?.replace(/_/g," ")}
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${statusColor(c.current_status)}`}>
+                    {statusLabel(c.current_status)}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{moment(c.created_date).format("DD.MM.YYYY")}</td>
