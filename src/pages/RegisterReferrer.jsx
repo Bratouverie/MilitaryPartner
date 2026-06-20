@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Link, useNavigate } from "react-router-dom";
 import { Shield, ArrowRight, Loader2, Eye, EyeOff, Copy, Mail, Key } from "lucide-react";
 import { setStoredProfile } from "@/lib/profileSession";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
 
 const genRefCode = () => {
   const c = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -23,7 +23,6 @@ const maskCode = (code) => {
 };
 
 export default function RegisterReferrer() {
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");

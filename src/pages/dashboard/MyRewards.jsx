@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2, Banknote } from "lucide-react";
 import moment from "moment";
+import { useProfile } from "@/lib/useProfile.jsx";
 
 const statusLabels = {
   pending: { label: "Ожидание", color: "bg-amber-100 text-amber-700" },
@@ -11,25 +12,27 @@ const statusLabels = {
   rejected: { label: "Отклонено", color: "bg-red-100 text-red-700" },
 };
 
+const rewardTypeLabels = {
+  contract_signed: "Контракт подписан",
+  unit_assigned: "Назначен в часть",
+  returned_healthy: "Вернулся здоровым",
+  moderator_bonus: "Бонус куратора",
+  manual_adjustment: "Ручная корректировка",
+};
+
 export default function MyRewards() {
+  const { profile, loading: profileLoading } = useProfile();
   const [rewards, setRewards] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      const user = await base44.auth.me();
-      const profiles = await base44.entities.ReferralProfile.filter({ linked_user_id: user.id });
-      const profileId = profiles[0]?.id;
-      if (profileId) {
-        const r = await base44.entities.Reward.filter({ beneficiary_user_id: profileId });
-        setRewards(r);
-      }
-      setLoading(false);
-    };
-    load();
-  }, []);
+    if (!profile) return;
+    setLoading(true);
+    base44.entities.Reward.filter({ beneficiary_user_id: profile.id })
+      .then(r => { setRewards(r); setLoading(false); });
+  }, [profile?.id]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (profileLoading || loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   return (
     <div>
@@ -47,7 +50,7 @@ export default function MyRewards() {
               <div key={r.id} className="bg-card border border-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <div className="font-heading font-bold text-lg">{(r.amount || 0).toLocaleString()} ₽</div>
-                  <div className="text-sm text-muted-foreground">{r.reward_type} · {moment(r.created_date).format("DD.MM.YYYY")}</div>
+                  <div className="text-sm text-muted-foreground">{rewardTypeLabels[r.reward_type] || r.reward_type} · {moment(r.created_date).format("DD.MM.YYYY")}</div>
                 </div>
                 <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${st.color} self-start`}>{st.label}</span>
               </div>

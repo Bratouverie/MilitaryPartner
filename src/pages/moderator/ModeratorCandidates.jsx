@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
+import { useProfile } from "@/lib/useProfile.jsx";
 import { Loader2, Search, Plus, X, MessageSquare, Clock } from "lucide-react";
 import moment from "moment";
 
@@ -22,8 +23,8 @@ const STATUS_COLORS = {
 const NOTE_TYPE_LABELS = { call:"Звонок", logistics:"Логистика", medical:"Медицина", agreement:"Договор", internal:"Внутренняя", public:"Публичная" };
 
 export default function ModeratorCandidates() {
-  const { toast } = useToast();
-  const [moderatorProfileId, setModeratorProfileId] = useState(null);
+  const { profile } = useProfile();
+  const moderatorProfileId = profile?.id;
   const [candidates, setCandidates] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,24 +40,13 @@ export default function ModeratorCandidates() {
   const [activeTab, setActiveTab] = useState("status");
 
   const load = async () => {
-    const storedId = sessionStorage.getItem("mp_profile_id");
-    let modId = storedId;
-    if (!modId) {
-      try {
-        const user = await base44.auth.me();
-        const profiles = await base44.entities.ReferralProfile.filter({ email: user.email });
-        modId = profiles[0]?.id;
-      } catch {}
-    }
-    setModeratorProfileId(modId);
-    if (modId) {
-      const data = await base44.entities.CandidateApplication.filter({ assigned_moderator_id: modId }, "-created_date");
-      setCandidates(data); setFiltered(data);
-    }
+    if (!moderatorProfileId) return;
+    const data = await base44.entities.CandidateApplication.filter({ assigned_moderator_id: moderatorProfileId }, "-created_date");
+    setCandidates(data); setFiltered(data);
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (moderatorProfileId) { load(); } else { setLoading(false); } }, [moderatorProfileId]);
   useEffect(() => {
     setFiltered(search ? candidates.filter(c => c.full_name?.toLowerCase().includes(search.toLowerCase()) || c.phone?.includes(search)) : candidates);
   }, [search, candidates]);

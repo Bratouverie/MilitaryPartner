@@ -12,10 +12,9 @@ export default function Leaderboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    base44.entities.ReferralProfile.filter({ role: "referrer" }, "-total_earned", 20).then(profiles => {
-      setLeaders(profiles.filter(p => (p.total_earned || 0) > 0));
-      setLoading(false);
-    });
+    base44.entities.ReferralProfile.filter({ role: "referrer", status: "active" }, "-total_earned", 20)
+      .then(data => { setLeaders(data); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -26,30 +25,25 @@ export default function Leaderboard() {
       {leaders.length === 0 ? (
         <div className="text-center py-16 bg-card border border-border rounded-2xl">
           <Trophy className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Рейтинг формируется после первых выплат</p>
+          <p className="text-muted-foreground">Рейтинг пока пуст</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {leaders.map((l, i) => {
-            const name = l.full_name || "Участник";
-            const initials = name.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase();
-            return (
-              <div key={l.id} className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${i < 3 ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"}`}>
-                  {i + 1}
-                </div>
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center font-bold text-sm text-primary shrink-0">{initials}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium truncate">{name}</div>
-                  <div className="text-xs text-muted-foreground">{levelLabels[l.level] || "Новичок"}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="font-heading font-bold">{(l.total_earned || 0).toLocaleString()} ₽</div>
-                  <div className="text-xs text-muted-foreground">{l.active_referrals_count || 0} рефералов</div>
-                </div>
+        <div className="space-y-2">
+          {leaders.map((l, i) => (
+            <div key={l.id} className="bg-card border border-border rounded-xl p-4 flex items-center gap-4">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shrink-0 ${i === 0 ? "bg-amber-400 text-white" : i === 1 ? "bg-gray-300 text-gray-700" : i === 2 ? "bg-amber-700 text-white" : "bg-muted text-muted-foreground"}`}>
+                {i + 1}
               </div>
-            );
-          })}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{l.full_name || l.email}</div>
+                <div className="text-xs text-muted-foreground">{levelLabels[l.level] || l.level}</div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-bold">{(l.total_earned || 0).toLocaleString()} ₽</div>
+                <div className="text-xs text-muted-foreground">{l.total_candidates_count || 0} канд.</div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

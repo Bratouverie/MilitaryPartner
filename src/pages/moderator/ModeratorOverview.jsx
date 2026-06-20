@@ -1,24 +1,24 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2, AlertCircle, Clock, Users, CheckSquare } from "lucide-react";
+import { useProfile } from "@/lib/useProfile.jsx";
 
 export default function ModeratorOverview() {
+  const { profile, loading: profileLoading } = useProfile();
   const [candidates, setCandidates] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      const [c, t] = await Promise.all([
-        base44.entities.CandidateApplication.list("-created_date"),
-        base44.entities.ModeratorTask.filter({ status: "open" }),
-      ]);
-      setCandidates(c); setTasks(t); setLoading(false);
-    };
-    load();
-  }, []);
+    if (!profile) return;
+    setLoading(true);
+    Promise.all([
+      base44.entities.CandidateApplication.filter({ assigned_moderator_id: profile.id }),
+      base44.entities.ModeratorTask.filter({ moderator_id: profile.id, status: "open" }),
+    ]).then(([c, t]) => { setCandidates(c); setTasks(t); setLoading(false); });
+  }, [profile?.id]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (profileLoading || loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   const newCandidates = candidates.filter(c => c.current_status === "NEW" || c.current_status === "QUESTIONNAIRE_FILLED");
   const urgent = tasks.filter(t => t.priority === "urgent");
@@ -53,10 +53,16 @@ export default function ModeratorOverview() {
                   <div className="font-medium">{c.full_name}</div>
                   <div className="text-sm text-muted-foreground">{c.phone}</div>
                 </div>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{c.current_status?.replace(/_/g," ")}</span>
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{c.current_status?.replace(/_/g, " ")}</span>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {newCandidates.length === 0 && tasks.length === 0 && (
+        <div className="text-center py-16 bg-card border border-border rounded-2xl text-muted-foreground">
+          Нет активных задач — всё под контролем!
         </div>
       )}
     </div>

@@ -1,39 +1,27 @@
-import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Shield, Menu, X } from "lucide-react";
+import { getStoredProfileId, getStoredRole } from "@/lib/profileSession";
 
 export default function PublicHeader() {
-  const navigate = useNavigate();
-  const [userRole, setUserRole] = useState(null); // null=loading, false=guest
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => {
-    base44.auth.isAuthenticated().then(async (auth) => {
-      if (!auth) { setUserRole(false); return; }
-      try {
-        const user = await base44.auth.me();
-        // look up business role from ReferralProfile
-        const profiles = await base44.entities.ReferralProfile.filter({ linked_user_id: user.id });
-        const p = profiles[0];
-        if (p) setUserRole(p.role);
-        else setUserRole("referrer"); // default if profile found via auth
-      } catch {
-        setUserRole(false);
-      }
-    });
-  }, []);
+  // Read from sessionStorage synchronously — no async delay, no flicker
+  const profileId = getStoredProfileId();
+  const role = getStoredRole();
+  const isLoggedIn = !!profileId;
 
   const ctaDest = () => {
-    if (!userRole) return "/login";
-    if (userRole === "referrer") return "/dashboard";
-    if (userRole === "moderator") return "/moderator";
+    if (!isLoggedIn) return "/secret-login";
+    if (role === "referrer") return "/dashboard";
+    if (role === "moderator") return "/moderator";
     return "/admin";
   };
+
   const ctaLabel = () => {
-    if (!userRole) return "Войти";
-    if (userRole === "referrer") return "Личный кабинет";
+    if (!isLoggedIn) return "Войти";
+    if (role === "referrer") return "Личный кабинет";
     return "Управлять";
   };
 
@@ -45,7 +33,6 @@ export default function PublicHeader() {
           <span className="font-display font-bold text-xl text-primary-foreground">МилитариПартнер</span>
         </Link>
 
-        {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6">
           <Link to="/how-it-works" className="text-sm text-primary-foreground/70 hover:text-primary-foreground transition-colors">Как это работает</Link>
           <Link to="/guarantees" className="text-sm text-primary-foreground/70 hover:text-primary-foreground transition-colors">Гарантии</Link>
@@ -58,13 +45,12 @@ export default function PublicHeader() {
           </Link>
           <Link to={ctaDest()}>
             <Button size="sm" variant="outline" className="border-primary-foreground/30 text-primary-foreground hover:bg-primary-foreground/10">
-              {userRole === null ? "…" : ctaLabel()}
+              {ctaLabel()}
             </Button>
           </Link>
         </div>
 
-        {/* Mobile */}
-        <button className="md:hidden text-primary-foreground" onClick={() => setMobileOpen(o => !o)}>
+        <button className="md:hidden text-primary-foreground p-1" onClick={() => setMobileOpen(o => !o)}>
           {mobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
       </div>

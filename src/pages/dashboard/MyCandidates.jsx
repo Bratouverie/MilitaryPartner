@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2, User } from "lucide-react";
 import moment from "moment";
+import { useProfile } from "@/lib/useProfile.jsx";
 
 const statusLabels = {
   NEW: { label: "Новый", color: "bg-gray-100 text-gray-700" },
@@ -20,29 +21,18 @@ const statusLabels = {
 };
 
 export default function MyCandidates() {
+  const { profile, loading: profileLoading } = useProfile();
   const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const load = async () => {
-      const user = await base44.auth.me();
-      const profiles = await base44.entities.ReferralProfile.filter({ linked_user_id: user.id });
-      if (profiles.length === 0) {
-        const byEmail = await base44.entities.ReferralProfile.filter({ email: user.email });
-        if (byEmail[0]) {
-          const c = await base44.entities.CandidateApplication.filter({ source_referrer_id: byEmail[0].id });
-          setCandidates(c);
-        }
-      } else {
-        const c = await base44.entities.CandidateApplication.filter({ source_referrer_id: profiles[0].id });
-        setCandidates(c);
-      }
-      setLoading(false);
-    };
-    load();
-  }, []);
+    if (!profile) return;
+    setLoading(true);
+    base44.entities.CandidateApplication.filter({ source_referrer_id: profile.id })
+      .then(c => { setCandidates(c); setLoading(false); });
+  }, [profile?.id]);
 
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
+  if (profileLoading || loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 
   return (
     <div>

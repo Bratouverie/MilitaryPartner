@@ -1,42 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
+import { toast } from "@/components/ui/use-toast";
 import { Loader2, Eye, EyeOff, Copy, Mail, RefreshCw, Key, Clock } from "lucide-react";
 import moment from "moment";
+import { useProfile } from "@/lib/useProfile.jsx";
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   return Array.from({ length: 28 }, () => c[Math.floor(Math.random() * c.length)]).join("");
 };
 const maskCode = (code) => {
-  if (!code || code.length < 12) return "****";
-  return code.slice(0, 4) + "****" + code.slice(8, 12) + "****";
+  if (!code || code.length < 8) return "****";
+  return code.slice(0, 4) + "••••••••••••••••••••" + code.slice(-4);
 };
 
 export default function Security() {
-  const { toast } = useToast();
-  const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { profile, loading, updateProfile } = useProfile();
   const [showCode, setShowCode] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [resending, setResending] = useState(false);
-
-  const load = async () => {
-    const storedId = sessionStorage.getItem("mp_profile_id");
-    if (storedId) {
-      const profiles = await base44.entities.ReferralProfile.filter({ id: storedId });
-      if (profiles[0]) { setProfile(profiles[0]); setLoading(false); return; }
-    }
-    try {
-      const user = await base44.auth.me();
-      const byEmail = await base44.entities.ReferralProfile.filter({ email: user.email });
-      setProfile(byEmail[0] || null);
-    } catch {}
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
 
   const handleShow = () => {
     setShowCode(true);
@@ -60,9 +43,8 @@ export default function Security() {
         body: `<h2>Ваш секретный код</h2><p>Код для входа: <strong style="font-size:18px;letter-spacing:2px">${profile.secret_code}</strong></p><p>Никому не передавайте этот код.</p>`,
       });
       const now = new Date().toISOString();
-      await base44.entities.ReferralProfile.update(profile.id, { secret_code_last_sent_at: now });
-      await base44.entities.ActionLog.create({ actor_role: profile.role, action_type: "SECRET_CODE_RESENT", entity_type: "ReferralProfile", entity_id: profile.id });
-      setProfile(p => ({...p, secret_code_last_sent_at: now}));
+      await updateProfile({ secret_code_last_sent_at: now });
+      await base44.entities.ActionLog.create({ actor_role: profile.role, action_type: "SECRET_CODE_RESENT", entity_type: "ReferralProfile", entity_id: profile.id }).catch(() => {});
       toast({ title: "Код отправлен на email!" });
     } catch {
       toast({ title: "Ошибка отправки", variant: "destructive" });
@@ -76,15 +58,14 @@ export default function Security() {
       const newCode = genSecretCode();
       const masked = maskCode(newCode);
       const now = new Date().toISOString();
-      await base44.entities.ReferralProfile.update(profile.id, { secret_code: newCode, masked_secret_code: masked, secret_code_last_sent_at: now });
+      await updateProfile({ secret_code: newCode, masked_secret_code: masked, secret_code_last_sent_at: now });
       await base44.integrations.Core.SendEmail({
         to: profile.email,
         subject: "Новый секретный код — МилитариПартнер",
         body: `<h2>Ваш новый секретный код</h2><p>Код: <strong style="font-size:18px">${newCode}</strong></p><p>Старый код больше не действует.</p>`,
       });
-      await base44.entities.ActionLog.create({ actor_role: profile.role, action_type: "SECRET_CODE_REGENERATED", entity_type: "ReferralProfile", entity_id: profile.id });
-      setProfile(p => ({...p, secret_code: newCode, masked_secret_code: masked, secret_code_last_sent_at: now}));
-      toast({ title: "Новый код сгенерирован и отправлен на email!" });
+      await base44.entities.ActionLog.create({ actor_role: profile.role, action_type: "SECRET_CODE_REGENERATED", entity_type: "ReferralProfile", entity_id: profile.id }).catch(() => {});
+      toast({ title: "Новый код сгенерирован и отправлен!" });
     } catch {
       toast({ title: "Ошибка", variant: "destructive" });
     } finally { setRegenerating(false); }
@@ -103,28 +84,30 @@ export default function Security() {
           </div>
           <div>
             <div className="font-heading font-bold">Секретный код</div>
-            <div className="text-sm text-muted-foreground">Используется для входа в систему</div>
+            <div className="text-sm text-muted-foreground">Используется для входа вместо пароля</div>
           </div>
         </div>
 
-        <div className="bg-muted rounded-xl p-4 font-mono text-lg text-center mb-2 tracking-wider min-h-[56px] flex items-center justify-center">
+        <div className="bg-muted rounded-xl p-4 font-mono text-base text-center mb-2 tracking-wider min-h-[56px] flex items-center justify-center break-all">
           {showCode ? profile.secret_code : (profile.masked_secret_code || maskCode(profile.secret_code))}
         </div>
 
-        {profile.secret_code_last_sent_at && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-4 justify-center">
-            <Clock className="w-3 h-3" />
-            Последняя отправка: {moment(profile.secret_code_last_sent_at).format("DD.MM.YYYY HH:mm")}
-          </div>
-        )}
-        {profile.last_login_at && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-4 justify-center">
-            <Clock className="w-3 h-3" />
-            Последний вход: {moment(profile.last_login_at).format("DD.MM.YYYY HH:mm")}
-          </div>
-        )}
+        <div className="space-y-1 mb-4">
+          {profile.secret_code_last_sent_at && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground justify-center">
+              <Clock className="w-3 h-3" />
+              Последняя отправка: {moment(profile.secret_code_last_sent_at).format("DD.MM.YYYY HH:mm")}
+            </div>
+          )}
+          {profile.last_login_at && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground justify-center">
+              <Clock className="w-3 h-3" />
+              Последний вход: {moment(profile.last_login_at).format("DD.MM.YYYY HH:mm")}
+            </div>
+          )}
+        </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2">
           <Button variant="outline" onClick={handleShow} className="h-10 text-sm">
             {showCode ? <EyeOff className="w-4 h-4 mr-1.5" /> : <Eye className="w-4 h-4 mr-1.5" />}
             {showCode ? "Скрыть" : "Показать (3с)"}
