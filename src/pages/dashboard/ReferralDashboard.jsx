@@ -2,21 +2,37 @@ import React, { useState, useEffect } from "react";
 import { useProfile } from "@/lib/useProfile";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
-import { Copy, Share2, Send, Eye, EyeOff, AlertTriangle, Loader2 } from "lucide-react";
+import { Copy, Share2, Send, Eye, EyeOff, AlertTriangle, Loader2, FileText, Link as LinkIcon } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useActiveInviteProgram } from "@/lib/useActiveInviteProgram";
+import { isPayoutProfileComplete } from "@/lib/payoutHelpers";
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
-  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getTelegramShareUrl } = useActiveInviteProgram(profile?.id);
+  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getTelegramShareUrl, getRewardAmount, getCandidateLink } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
   const [creatingInvite, setCreatingInvite] = useState(false);
+  const [paymentProfile, setPaymentProfile] = useState(null);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
   const referralLink = inviteLink;
+  const candidateLink = getCandidateLink();
+  const payoutComplete = isPayoutProfileComplete(paymentProfile);
 
   useEffect(() => {
-    if (profile?.id) loadStats();
+    if (profile?.id) {
+      loadStats();
+      loadPaymentProfile();
+    }
   }, [profile?.id]);
+
+  const loadPaymentProfile = async () => {
+    try {
+      const pp = await base44.entities.PaymentProfile.filter({ user_id: profile?.id });
+      if (pp[0]) setPaymentProfile(pp[0]);
+    } catch (e) {
+      console.error("Ошибка загрузки PaymentProfile:", e);
+    }
+  };
 
   const handleCreateInvite = async () => {
     setCreatingInvite(true);
@@ -70,10 +86,11 @@ export default function ReferralDashboard() {
   };
 
   const handleShare = () => {
-    if (navigator.share) {
+    if (navigator.share && referralLink) {
+      const rewardText = getRewardAmount();
       navigator.share({
         title: "МилитариПартнер",
-        text: `Работаю в МилитариПартнер. За каждого кандидата платят от 50K до 200K ₽. ${referralLink}`,
+        text: `Присоединяйся к программе! За каждого кандидата платят ${rewardText}. ${referralLink}`,
         url: referralLink,
       });
     }
@@ -143,40 +160,75 @@ export default function ReferralDashboard() {
                 )}
               </div>
               <div className="mt-2 text-sm text-primary-foreground/80">
-                За каждого партнёра: 50 000 – 200 000 ₽
+                Ваш реферал получит {getRewardAmount()}
               </div>
             </div>
           </div>
 
-          {/* BUTTON 2: ЗАПОЛНИТЬ ДАННЫЕ */}
-          <div
-            className={`rounded-xl border-2 p-6 shadow-lg hover:shadow-xl transition-all min-h-24 md:min-h-28 ${
-              profile?.email
-                ? "bg-gradient-to-br from-green-600 to-green-700 border-green-800"
-                : "bg-gradient-to-br from-amber-500 to-amber-600 border-amber-700 animate-pulse"
-            }`}
-          >
-            <div className="flex flex-col justify-between h-full">
-              <div>
-                <h2 className="font-black text-2xl md:text-3xl text-white mb-2">
-                  {profile?.email ? "✓" : "⚠️"} ЗАПОЛНИТЬ ДАННЫЕ ДЛЯ ВЫПЛАТЫ
-                </h2>
-                <p className="text-sm md:text-base text-white/90">
-                  {profile?.email
-                    ? `Готово к выплатам • Дата: ${new Date(profile.updated_date).toLocaleDateString("ru-RU")}`
-                    : "Без этого мы не сможем тебе заплатить!"}
-                </p>
-              </div>
-              <div className="mt-3">
-                <Button
-                  size="sm"
-                  className="bg-white text-amber-600 hover:bg-white/90 text-xs md:text-sm font-bold"
-                >
-                  {profile?.email ? "Изменить данные" : "Заполнить сейчас"}
-                </Button>
+          {/* BUTTON 2: ЗАПОЛНИТЬ ДАННЫЕ / АНКЕТА КАНДИДАТА */}
+          {payoutComplete ? (
+            <div className="rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 border-2 border-amber-700 p-6 shadow-lg hover:shadow-xl transition-all min-h-24 md:min-h-28">
+              <div className="flex flex-col justify-between h-full">
+                <div>
+                  <h2 className="font-black text-2xl md:text-3xl text-white mb-2">
+                    📋 АНКЕТА КАНДИДАТА
+                  </h2>
+                  <p className="text-sm md:text-base text-white/90">
+                    Отправляй кандидатов по этой ссылке
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-wrap mt-3">
+                  <Button
+                    onClick={() => navigator.clipboard.writeText(candidateLink).then(() => toast({ title: "✓ Ссылка скопирована!" }))}
+                    size="sm"
+                    disabled={!candidateLink}
+                    className="bg-white text-amber-600 hover:bg-white/90 text-xs md:text-sm font-bold"
+                  >
+                    <Copy className="w-3 h-3 mr-1" />Скопировать
+                  </Button>
+                  <Button
+                    onClick={() => window.open(candidateLink)}
+                    size="sm"
+                    disabled={!candidateLink}
+                    className="bg-white text-amber-600 hover:bg-white/90 text-xs md:text-sm font-bold"
+                  >
+                    <LinkIcon className="w-3 h-3 mr-1" />Открыть
+                  </Button>
+                  {navigator.share && (
+                    <Button
+                      onClick={() => navigator.share({ title: "Анкета кандидата", url: candidateLink })}
+                      size="sm"
+                      className="bg-white text-amber-600 hover:bg-white/90 text-xs md:text-sm font-bold"
+                    >
+                      <Share2 className="w-3 h-3 mr-1" />Поделиться
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 border-2 border-amber-700 p-6 shadow-lg hover:shadow-xl transition-all min-h-24 md:min-h-28 animate-pulse">
+              <div className="flex flex-col justify-between h-full">
+                <div>
+                  <h2 className="font-black text-2xl md:text-3xl text-white mb-2">
+                    ⚠️ ЗАПОЛНИТЬ ДАННЫЕ ДЛЯ ВЫПЛАТЫ
+                  </h2>
+                  <p className="text-sm md:text-base text-white/90">
+                    Без этого мы не сможем тебе заплатить!
+                  </p>
+                </div>
+                <div className="mt-3">
+                  <Button
+                    onClick={() => window.location.href = "/dashboard/payouts"}
+                    size="sm"
+                    className="bg-white text-amber-600 hover:bg-white/90 text-xs md:text-sm font-bold"
+                  >
+                    <FileText className="w-3 h-3 mr-1" />Заполнить сейчас
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* BUTTON 3: ПОДЕЛИТЬСЯ В TELEGRAM */}
           <div className="rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 border-2 border-blue-700 p-6 shadow-lg hover:shadow-xl transition-all min-h-24 md:min-h-28">

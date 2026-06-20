@@ -70,19 +70,19 @@ export default function Payouts() {
      if (!form.passport_series || !form.passport_number) { toast({ title: "Заполните номер паспорта", variant: "destructive" }); return; }
      if (!form.registration_address.trim()) { toast({ title: "Заполните адрес регистрации", variant: "destructive" }); return; }
      setSaving(true);
-    try {
-      const data = { ...form, verification_status: "pending_review" };
-      if (paymentProfile) {
-        await base44.entities.PaymentProfile.update(paymentProfile.id, data);
-        setPaymentProfile(p => ({ ...p, ...data }));
-      } else {
-        const pp = await base44.entities.PaymentProfile.create({ user_id: profile.id, ...data });
-        setPaymentProfile(pp);
-      }
-      toast({ title: "Реквизиты сохранены. Ожидайте подтверждения администратором." });
-    } catch { toast({ title: "Ошибка сохранения", variant: "destructive" }); }
-    finally { setSaving(false); }
-  };
+     try {
+       const data = { ...form, verification_status: "pending_review" };
+       if (paymentProfile) {
+         await base44.entities.PaymentProfile.update(paymentProfile.id, data);
+         setPaymentProfile(p => ({ ...p, ...data }));
+       } else {
+         const pp = await base44.entities.PaymentProfile.create({ user_id: profile.id, ...data });
+         setPaymentProfile(pp);
+       }
+       toast({ title: "✓ Реквизиты сохранены! Ожидайте подтверждения администратором." });
+     } catch { toast({ title: "Ошибка сохранения", variant: "destructive" }); }
+     finally { setSaving(false); }
+   };
 
   if (profileLoading || loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
 

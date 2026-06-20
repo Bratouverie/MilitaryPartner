@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { createDefaultInviteSubprogram } from "./programUtils";
+import { generateTelegramShareText, formatRewardAmount } from "./payoutHelpers";
 
 export function useActiveInviteProgram(profileId) {
   const [inviteProgram, setInviteProgram] = useState(null);
@@ -24,7 +25,6 @@ export function useActiveInviteProgram(profileId) {
         owner_user_id: profileId,
         is_archived: false,
       });
-      // Активная пригласительная: kind=child, is_active=true
       const active = all.find(p => p.program_kind === "child" && p.is_active && p.link_code);
       if (active) {
         setInviteProgram(active);
@@ -40,10 +40,6 @@ export function useActiveInviteProgram(profileId) {
     }
   };
 
-  /**
-   * Создаёт первую подпрограмму, если она отсутствует.
-   * parentProgram — родительская программа пользователя.
-   */
   const createInviteProgram = async (parentProgram) => {
     const { program, error } = await createDefaultInviteSubprogram(parentProgram, profileId);
     if (program) {
@@ -53,24 +49,28 @@ export function useActiveInviteProgram(profileId) {
     return { program, error };
   };
 
-  /**
-   * Установить другую программу как активную для приглашения.
-   */
   const setActiveProgram = (program) => {
     if (!program?.link_code) return;
     setInviteProgram(program);
     setInviteLink(`${window.location.origin}/join/${program.link_code}`);
   };
 
-  /**
-   * Формирует строку для Telegram share.
-   */
   const getTelegramShareUrl = () => {
     if (!inviteLink || !inviteProgram) return null;
-    const programTitle = inviteProgram.public_program_title || inviteProgram.base_program_title || "МилитариПартнер";
-    const text = `Присоединяйся к программе «${programTitle}»! За каждый контракт платят от 50 000 до 200 000 ₽.`;
+    const text = generateTelegramShareText(inviteProgram);
     return `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`;
   };
 
-  return { inviteProgram, inviteLink, loading, reload: loadProgram, createInviteProgram, setActiveProgram, getTelegramShareUrl };
+  const getRewardAmount = () => formatRewardAmount(inviteProgram?.reward_quota || 0);
+
+  const getCandidateLink = () => {
+    if (!inviteProgram?.candidate_form_code) return "";
+    return `${window.location.origin}/candidate/${inviteProgram.candidate_form_code}`;
+  };
+
+  return { 
+    inviteProgram, inviteLink, loading, 
+    reload: loadProgram, createInviteProgram, setActiveProgram,
+    getTelegramShareUrl, getRewardAmount, getCandidateLink 
+  };
 }
