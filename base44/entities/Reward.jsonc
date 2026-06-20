@@ -1,0 +1,56 @@
+{
+  "name": "Reward",
+  "type": "object",
+  "properties": {
+    "candidate_id": {
+      "type": "string"
+    },
+    "beneficiary_user_id": {
+      "type": "string",
+      "description": "\u041a\u043e\u043c\u0443 \u043d\u0430\u0447\u0438\u0441\u043b\u0435\u043d\u0430 \u043d\u0430\u0433\u0440\u0430\u0434\u0430"
+    },
+    "source_referrer_id": {
+      "type": "string"
+    },
+    "amount": {
+      "type": "number"
+    },
+    "reward_type": {
+      "type": "string",
+      "enum": [
+        "contract_signed",
+        "unit_assigned",
+        "returned_healthy",
+        "moderator_bonus",
+        "manual_adjustment"
+      ],
+      "default": "contract_signed"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "processing",
+        "paid",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "approved_by_user_id": {
+      "type": "string"
+    },
+    "paid_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "admin_comment": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "beneficiary_user_id",
+    "amount"
+  ]
+}

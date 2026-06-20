@@ -1,0 +1,55 @@
+{
+  "name": "PaymentProfile",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string"
+    },
+    "recipient_name": {
+      "type": "string"
+    },
+    "passport_number": {
+      "type": "string"
+    },
+    "tax_id": {
+      "type": "string"
+    },
+    "snils": {
+      "type": "string"
+    },
+    "bank_name": {
+      "type": "string"
+    },
+    "bik": {
+      "type": "string"
+    },
+    "account_number": {
+      "type": "string"
+    },
+    "card_number": {
+      "type": "string"
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "bank_transfer",
+        "card"
+      ],
+      "default": "bank_transfer"
+    },
+    "verification_status": {
+      "type": "string",
+      "enum": [
+        "not_filled",
+        "pending_review",
+        "approved",
+        "rejected"
+      ],
+      "default": "not_filled"
+    }
+  },
+  "required": [
+    "user_id",
+    "recipient_name"
+  ]
+}

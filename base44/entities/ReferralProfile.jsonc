@@ -1,0 +1,106 @@
+{
+  "name": "ReferralProfile",
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "telegram_username": {
+      "type": "string"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "super_admin",
+        "admin",
+        "moderator",
+        "referrer",
+        "candidate"
+      ],
+      "default": "referrer"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive",
+        "blocked",
+        "pending"
+      ],
+      "default": "active"
+    },
+    "master_link_id": {
+      "type": "string",
+      "description": "ID \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u043e\u0439 \u043c\u0430\u0441\u0442\u0435\u0440-\u0441\u0441\u044b\u043b\u043a\u0438"
+    },
+    "parent_user_id": {
+      "type": "string",
+      "description": "ID \u0440\u043e\u0434\u0438\u0442\u0435\u043b\u044c\u0441\u043a\u043e\u0433\u043e \u0440\u0435\u0444\u0435\u0440\u0430\u043b\u0430"
+    },
+    "referral_code": {
+      "type": "string",
+      "description": "\u041f\u0435\u0440\u0441\u043e\u043d\u0430\u043b\u044c\u043d\u044b\u0439 \u0440\u0435\u0444\u0435\u0440\u0430\u043b\u044c\u043d\u044b\u0439 \u043a\u043e\u0434"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "L0_novice",
+        "L1_fighter",
+        "L2_sergeant",
+        "L3_officer",
+        "L4_general",
+        "L5_marshal"
+      ],
+      "default": "L0_novice"
+    },
+    "referral_reward": {
+      "type": "number",
+      "default": 50000,
+      "description": "\u0421\u0443\u043c\u043c\u0430 \u043d\u0430\u0433\u0440\u0430\u0434\u044b \u0437\u0430 \u043f\u0440\u0438\u0432\u043b\u0435\u0447\u0451\u043d\u043d\u043e\u0433\u043e \u043a\u0430\u043d\u0434\u0438\u0434\u0430\u0442\u0430"
+    },
+    "personal_max_reward_snapshot": {
+      "type": "number",
+      "description": "\u0421\u043d\u0438\u043c\u043e\u043a max_reward \u043c\u0430\u0441\u0442\u0435\u0440-\u0441\u0441\u044b\u043b\u043a\u0438 \u043f\u0440\u0438 \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0438"
+    },
+    "active_referrals_count": {
+      "type": "number",
+      "default": 0
+    },
+    "total_candidates_count": {
+      "type": "number",
+      "default": 0
+    },
+    "total_earned": {
+      "type": "number",
+      "default": 0
+    },
+    "total_paid": {
+      "type": "number",
+      "default": 0
+    },
+    "total_pending": {
+      "type": "number",
+      "default": 0
+    },
+    "secret_code": {
+      "type": "string",
+      "description": "\u041a\u043e\u0434 \u0432\u0445\u043e\u0434\u0430 (32 \u0441\u0438\u043c\u0432\u043e\u043b\u0430)"
+    },
+    "linked_user_id": {
+      "type": "string",
+      "description": "ID \u0441\u0432\u044f\u0437\u0430\u043d\u043d\u043e\u0433\u043e \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044f \u0441\u0438\u0441\u0442\u0435\u043c\u044b"
+    }
+  },
+  "required": [
+    "full_name",
+    "email",
+    "referral_code"
+  ]
+}

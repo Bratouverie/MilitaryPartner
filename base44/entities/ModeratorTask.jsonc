@@ -1,0 +1,46 @@
+{
+  "name": "ModeratorTask",
+  "type": "object",
+  "properties": {
+    "candidate_id": {
+      "type": "string"
+    },
+    "moderator_id": {
+      "type": "string"
+    },
+    "task_title": {
+      "type": "string"
+    },
+    "task_description": {
+      "type": "string"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "urgent"
+      ],
+      "default": "medium"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "done",
+        "canceled"
+      ],
+      "default": "open"
+    },
+    "due_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "task_title",
+    "moderator_id"
+  ]
+}

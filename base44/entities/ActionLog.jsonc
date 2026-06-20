@@ -1,0 +1,27 @@
+{
+  "name": "ActionLog",
+  "type": "object",
+  "properties": {
+    "actor_user_id": {
+      "type": "string"
+    },
+    "actor_role": {
+      "type": "string"
+    },
+    "action_type": {
+      "type": "string"
+    },
+    "entity_type": {
+      "type": "string"
+    },
+    "entity_id": {
+      "type": "string"
+    },
+    "action_payload": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "action_type"
+  ]
+}

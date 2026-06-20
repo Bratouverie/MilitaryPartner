@@ -1,0 +1,25 @@
+{
+  "name": "CandidateStatusHistory",
+  "type": "object",
+  "properties": {
+    "candidate_id": {
+      "type": "string"
+    },
+    "old_status": {
+      "type": "string"
+    },
+    "new_status": {
+      "type": "string"
+    },
+    "changed_by_user_id": {
+      "type": "string"
+    },
+    "change_comment": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "new_status"
+  ]
+}
