@@ -1,58 +1,127 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/base44Client";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useToast } from "@/components/ui/use-toast";
-import { Shield, Loader2, CheckCircle, User } from "lucide-react";
+import { Shield, Loader2, CheckCircle, User, AlertTriangle, RefreshCw } from "lucide-react";
+
+const MOTIVATIONS = [
+  { value: "want_to_serve", label: "Хочу служить и зарабатывать", icon: "🎖️" },
+  { value: "interested_in_pay", label: "Интересно, сколько платят", icon: "💰" },
+  { value: "friend_recommended", label: "Друг рекомендовал — посмотрю", icon: "👥" },
+];
 
 export default function RefLanding() {
   const { code } = useParams();
-  const { toast } = useToast();
   const [referrer, setReferrer] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState("loading"); // loading | ready | not_found | error
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    full_name: "", phone: "", motivation: "want_to_serve", consent: false
+    full_name: "", phone: "", motivation: "", consent: false
   });
+  const [formError, setFormError] = useState("");
 
-  useEffect(() => {
-    base44.entities.ReferralProfile.filter({ referral_code: code }).then(profiles => {
-      setReferrer(profiles[0] || null);
-      setLoading(false);
-    });
+  const fetchReferrer = useCallback(async () => {
+    setLoadState("loading");
+    try {
+      const profiles = await base44.entities.ReferralProfile.filter({ referral_code: code });
+      if (profiles.length === 0) {
+        setLoadState("not_found");
+      } else {
+        setReferrer(profiles[0]);
+        setLoadState("ready");
+      }
+    } catch {
+      setLoadState("error");
+    }
   }, [code]);
+
+  useEffect(() => { fetchReferrer(); }, [fetchReferrer]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.consent) { toast({ title: "Необходимо согласие", variant: "destructive" }); return; }
+    setFormError("");
+
+    if (!form.motivation) {
+      setFormError("Пожалуйста, выберите мотивацию");
+      return;
+    }
+    if (!form.consent) {
+      setFormError("Необходимо согласие на обработку персональных данных");
+      return;
+    }
+    if (submitting) return;
+
     setSubmitting(true);
     try {
-      await base44.entities.CandidateApplication.create({
-        full_name: form.full_name, phone: form.phone,
-        motivation: form.motivation, risk_disclaimer_accepted: form.consent,
+      const candidate = await base44.entities.CandidateApplication.create({
+        full_name: form.full_name,
+        phone: form.phone,
+        motivation: form.motivation,
+        risk_disclaimer_accepted: form.consent,
         current_status: "QUESTIONNAIRE_FILLED",
-        source_referrer_id: referrer?.id, source_master_link_id: referrer?.master_link_id,
+        source_referrer_id: referrer?.id,
+        source_master_link_id: referrer?.master_link_id,
         source_channel: "referral_link",
       });
+
+      // Status history
+      await base44.entities.CandidateStatusHistory.create({
+        candidate_id: candidate.id,
+        old_status: "NEW",
+        new_status: "QUESTIONNAIRE_FILLED",
+        changed_by_user_id: "system",
+        change_comment: "Анкета отправлена по реферальной ссылке",
+      }).catch(() => {});
+
+      // Action log
+      await base44.entities.ActionLog.create({
+        action_type: "CANDIDATE_APPLICATION_CREATED",
+        entity_type: "CandidateApplication",
+        entity_id: candidate.id,
+        action_payload: JSON.stringify({
+          referral_code: code,
+          source_referrer_id: referrer?.id,
+          source_master_link_id: referrer?.master_link_id,
+        }),
+      }).catch(() => {});
+
       setSubmitted(true);
     } catch {
-      toast({ title: "Ошибка", description: "Попробуйте ещё раз", variant: "destructive" });
-    } finally { setSubmitting(false); }
+      setFormError("Произошла ошибка при отправке. Попробуйте ещё раз.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
-  if (!referrer) return (
+  // --- Loading states ---
+  if (loadState === "loading") return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+
+  if (loadState === "not_found") return (
     <div className="min-h-screen flex items-center justify-center flex-col gap-4 p-4 text-center">
       <Shield className="w-16 h-16 text-muted-foreground" />
       <h1 className="font-heading text-2xl font-bold">Ссылка не найдена</h1>
-      <p className="text-muted-foreground">Проверьте правильность реферальной ссылки</p>
+      <p className="text-muted-foreground max-w-sm">Реферальная ссылка недействительна или устарела. Проверьте правильность адреса.</p>
       <Link to="/"><Button>На главную</Button></Link>
+    </div>
+  );
+
+  if (loadState === "error") return (
+    <div className="min-h-screen flex items-center justify-center flex-col gap-4 p-4 text-center">
+      <AlertTriangle className="w-16 h-16 text-destructive" />
+      <h1 className="font-heading text-2xl font-bold">Не удалось загрузить анкету</h1>
+      <p className="text-muted-foreground max-w-sm">Проверьте подключение к интернету и попробуйте ещё раз.</p>
+      <Button onClick={fetchReferrer} className="gap-2">
+        <RefreshCw className="w-4 h-4" /> Попробовать ещё раз
+      </Button>
     </div>
   );
 
@@ -83,7 +152,7 @@ export default function RefLanding() {
           </div>
           <div>
             <div className="text-sm text-muted-foreground">Вас пригласил</div>
-            <div className="font-medium">{referrer.full_name}</div>
+            <div className="font-medium">{referrer.full_name || "Партнёр"}</div>
           </div>
         </div>
 
@@ -93,41 +162,93 @@ export default function RefLanding() {
         <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6">
           {step === 1 && (
             <>
-              <div className="text-xs font-medium text-muted-foreground">Шаг 1 из 2 — Контакты</div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Шаг 1 из 2 — Контакты</div>
               <div>
                 <Label>Имя *</Label>
-                <Input value={form.full_name} onChange={e => setForm(f => ({...f, full_name: e.target.value}))} required placeholder="Ваше имя" />
+                <Input
+                  value={form.full_name}
+                  onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))}
+                  required
+                  placeholder="Ваше имя"
+                />
               </div>
               <div>
                 <Label>Телефон *</Label>
-                <Input value={form.phone} onChange={e => setForm(f => ({...f, phone: e.target.value}))} required placeholder="+7 900 123 45 67" />
+                <Input
+                  value={form.phone}
+                  onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                  required
+                  placeholder="+7 900 123 45 67"
+                  type="tel"
+                />
               </div>
-              <Button type="button" onClick={() => { if (form.full_name && form.phone) setStep(2); }}
-                className="w-full bg-primary font-bold h-12 rounded-xl">Далее</Button>
+              <Button
+                type="button"
+                onClick={() => { if (form.full_name && form.phone) setStep(2); }}
+                className="w-full bg-primary font-bold h-12 rounded-xl"
+              >
+                Далее
+              </Button>
             </>
           )}
+
           {step === 2 && (
             <>
-              <div className="text-xs font-medium text-muted-foreground">Шаг 2 из 2 — Мотивация</div>
-              <RadioGroup value={form.motivation} onValueChange={v => setForm(f => ({...f, motivation: v}))} className="space-y-3">
-                {[
-                  { value: "want_to_serve", label: "Хочу служить, зарабатывать" },
-                  { value: "interested_in_pay", label: "Только интересно, сколько платят" },
-                  { value: "friend_recommended", label: "Друг рекомендовал, посмотрю" },
-                ].map(opt => (
-                  <div key={opt.value} className="flex items-center gap-3 border border-border rounded-xl p-4 cursor-pointer hover:bg-muted/50">
-                    <RadioGroupItem value={opt.value} id={opt.value} />
-                    <label htmlFor={opt.value} className="cursor-pointer font-medium text-sm">{opt.label}</label>
-                  </div>
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Шаг 2 из 2 — Мотивация</div>
+              <div className="space-y-3">
+                {MOTIVATIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setForm(f => ({ ...f, motivation: opt.value }))}
+                    className={`w-full text-left flex items-center gap-4 border-2 rounded-xl p-4 transition-all cursor-pointer
+                      ${form.motivation === opt.value
+                        ? "border-primary bg-primary/8 shadow-sm"
+                        : "border-border bg-background hover:border-primary/40 hover:bg-muted/30"
+                      }`}
+                  >
+                    <span className="text-2xl shrink-0">{opt.icon}</span>
+                    <span className="font-medium text-sm flex-1">{opt.label}</span>
+                    <span className={`w-5 h-5 rounded-full border-2 shrink-0 flex items-center justify-center transition-all
+                      ${form.motivation === opt.value
+                        ? "border-primary bg-primary"
+                        : "border-muted-foreground/30"
+                      }`}>
+                      {form.motivation === opt.value && (
+                        <span className="w-2 h-2 rounded-full bg-white block" />
+                      )}
+                    </span>
+                  </button>
                 ))}
-              </RadioGroup>
-              <div className="flex items-start gap-2 pt-2">
-                <Checkbox checked={form.consent} onCheckedChange={v => setForm(f => ({...f, consent: v}))} id="consent2" />
-                <label htmlFor="consent2" className="text-sm text-muted-foreground leading-tight">Согласен на обработку персональных данных</label>
               </div>
+
+              <div className="flex items-start gap-3 pt-2">
+                <Checkbox
+                  checked={form.consent}
+                  onCheckedChange={v => setForm(f => ({ ...f, consent: v }))}
+                  id="consent2"
+                  className="mt-0.5"
+                />
+                <label htmlFor="consent2" className="text-sm text-muted-foreground leading-tight cursor-pointer">
+                  Согласен на обработку персональных данных в соответствии с требованиями законодательства РФ
+                </label>
+              </div>
+
+              {formError && (
+                <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">
+                  {formError}
+                </div>
+              )}
+
               <div className="flex gap-3">
-                <Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1 h-12 rounded-xl">Назад</Button>
-                <Button type="submit" disabled={submitting} className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 rounded-xl">
+                <Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1 h-12 rounded-xl">
+                  Назад
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 rounded-xl"
+                >
                   {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Отправить"}
                 </Button>
               </div>

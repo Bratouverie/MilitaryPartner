@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { Loader2, Link2, Users, UserCheck, Banknote, TrendingUp, Clock } from "lucide-react";
+import { Loader2, Link2, Users, UserCheck, Banknote, TrendingUp, Clock, ShieldCheck } from "lucide-react";
+import { getStoredRole } from "@/lib/profileSession";
 
 export default function AdminOverview() {
   const [stats, setStats] = useState(null);
@@ -50,9 +51,21 @@ export default function AdminOverview() {
     MEDICAL_EXAM_DONE: "bg-teal-100 text-teal-700", UNIT_ASSIGNED: "bg-green-200 text-green-800",
   };
 
+  const role = getStoredRole();
+  const roleLabel = role === "super_admin" ? "Супер-администратор" : "Администратор";
+  const roleBadge = role === "super_admin"
+    ? "bg-amber-100 text-amber-800 border-amber-200"
+    : "bg-blue-100 text-blue-800 border-blue-200";
+
   return (
     <div>
-      <h1 className="font-heading text-2xl font-bold mb-6">Панель управления</h1>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <h1 className="font-heading text-2xl font-bold">Панель управления</h1>
+        <div className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border ${roleBadge}`}>
+          <ShieldCheck className="w-4 h-4" />
+          Вы вошли как: <strong>{roleLabel}</strong>
+        </div>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {cards.map((c, i) => (
           <div key={i} className="bg-card border border-border rounded-xl p-5">

@@ -48,21 +48,12 @@ import ModeratorCandidates from '@/pages/moderator/ModeratorCandidates';
 import ModeratorTasks from '@/pages/moderator/ModeratorTasks';
 
 const AuthenticatedApp = () => {
-  const { isLoadingPublicSettings, authError } = useAuth();
+  const { authError } = useAuth();
 
-  if (isLoadingPublicSettings) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
-  // Only block hard errors — auth_required is normal since we use secret-code flow
+  // Only hard block on user_not_registered — do NOT block public pages for auth_required or loading
   if (authError?.type === 'user_not_registered') {
     return <UserNotRegisteredError />;
   }
-  // Ignore auth_required — our pages handle their own session-based auth
 
   return (
     <Routes>
@@ -77,11 +68,13 @@ const AuthenticatedApp = () => {
       <Route path="/resend-code" element={<ResendCode />} />
       <Route path="/admin-bootstrap" element={<AdminBootstrap />} />
 
-      {/* Legacy redirects */}
+      {/* Legacy auth redirects — все старые маршруты направляются в новый flow */}
       <Route path="/login" element={<Navigate to="/secret-login" replace />} />
       <Route path="/register" element={<Navigate to="/register-referrer" replace />} />
       <Route path="/forgot-password" element={<Navigate to="/resend-code" replace />} />
       <Route path="/reset-password" element={<Navigate to="/secret-login" replace />} />
+      <Route path="/Login" element={<Navigate to="/secret-login" replace />} />
+      <Route path="/Register" element={<Navigate to="/register-referrer" replace />} />
 
       {/* Referrer dashboard — guarded by role */}
       <Route path="/dashboard" element={<RoleGuard allowedRoles={["referrer"]}><DashboardLayout /></RoleGuard>}>

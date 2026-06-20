@@ -16,13 +16,16 @@ export default function PublicHeader() {
     if (!isLoggedIn) return "/secret-login";
     if (role === "referrer") return "/dashboard";
     if (role === "moderator") return "/moderator";
-    return "/admin";
+    if (role === "admin" || role === "super_admin") return "/admin";
+    return "/secret-login";
   };
 
   const ctaLabel = () => {
     if (!isLoggedIn) return "Войти";
     if (role === "referrer") return "Личный кабинет";
-    return "Управлять";
+    if (role === "moderator") return "Кабинет куратора";
+    if (role === "admin" || role === "super_admin") return "Управлять";
+    return "Войти";
   };
 
   return (

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
-import { Shield, Loader2, Key } from "lucide-react";
+import { Shield, Loader2, Key, ShieldCheck } from "lucide-react";
 import { setStoredProfile, roleHomePath } from "@/lib/profileSession";
 
 export default function SecretCodeLogin() {
@@ -23,42 +23,35 @@ export default function SecretCodeLogin() {
 
       if (profiles.length === 0) {
         setError("Аккаунт с таким email не найден. Проверьте данные или зарегистрируйтесь.");
-        setLoading(false);
         return;
       }
 
       const profile = profiles.find(p => p.secret_code === form.secret_code.trim());
 
       if (!profile) {
-        setError("Неверный секретный код. Проверьте код — он был отправлен вам на email при регистрации.");
-        // Log failed attempt
+        setError("Неверный секретный код. Проверьте код — он был отправлен на email при регистрации.");
         await base44.entities.ActionLog.create({
           actor_role: "unknown",
           action_type: "LOGIN_FAILED_WRONG_CODE",
           entity_type: "ReferralProfile",
           action_payload: JSON.stringify({ email: emailLower }),
         }).catch(() => {});
-        setLoading(false);
         return;
       }
 
       if (profile.status === "blocked") {
         setError("Ваш аккаунт заблокирован. Обратитесь к администратору.");
-        setLoading(false);
         return;
       }
 
       if (!profile.role) {
         setError("Роль пользователя не определена. Обратитесь к администратору.");
-        setLoading(false);
         return;
       }
 
-      // Update last_login_at
       const now = new Date().toISOString();
       await base44.entities.ReferralProfile.update(profile.id, { last_login_at: now });
 
-      // Action log
       await base44.entities.ActionLog.create({
         actor_role: profile.role,
         action_type: "LOGIN_SUCCESS",
@@ -67,13 +60,10 @@ export default function SecretCodeLogin() {
         action_payload: JSON.stringify({ email: emailLower, role: profile.role }),
       }).catch(() => {});
 
-      // Store session
       setStoredProfile({ ...profile, last_login_at: now });
-
-      // Redirect by role
       navigate(roleHomePath(profile.role), { replace: true });
 
-    } catch (err) {
+    } catch {
       setError("Произошла ошибка при попытке входа. Попробуйте ещё раз.");
     } finally {
       setLoading(false);
@@ -91,16 +81,16 @@ export default function SecretCodeLogin() {
         </div>
       </header>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-16">
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
               <Key className="w-8 h-8 text-primary" />
             </div>
           </div>
-          <h1 className="font-heading text-3xl font-bold text-center mb-2">Вход по Secret Code</h1>
+          <h1 className="font-heading text-3xl font-bold text-center mb-2">Вход в систему</h1>
           <p className="text-muted-foreground text-center mb-8">
-            Введите email и секретный код — пароль не нужен
+            Email + секретный код — пароль не нужен
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6">
@@ -127,7 +117,7 @@ export default function SecretCodeLogin() {
                 autoComplete="off"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Код был отправлен на ваш email при регистрации
+                Код отправляется на email при регистрации
               </p>
             </div>
 
@@ -155,6 +145,23 @@ export default function SecretCodeLogin() {
                 Получить код на email
               </Link>
             </p>
+          </div>
+
+          {/* Блок для администраторов / владельца сайта */}
+          <div className="mt-8 bg-muted/50 border border-border rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldCheck className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Вход для администратора</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Если вы владелец сайта и впервые настраиваете систему — сначала создайте аккаунт администратора.
+              После этого используйте email и секретный код для входа в <strong>/admin</strong>.
+            </p>
+            <Link to="/admin-bootstrap">
+              <Button variant="outline" size="sm" className="w-full text-xs">
+                Создать аккаунт администратора
+              </Button>
+            </Link>
           </div>
         </div>
       </div>

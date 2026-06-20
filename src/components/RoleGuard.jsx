@@ -1,27 +1,17 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
-import { useBusinessProfile } from "@/lib/useBusinessProfile";
-import { roleHomePath } from "@/lib/profileSession";
+import { getStoredProfileId, getStoredRole, roleHomePath } from "@/lib/profileSession";
 
 /**
- * Ролевой guard на основе бизнес-профиля (sessionStorage + ReferralProfile).
- * Не зависит от BASE44 auth токена.
+ * Ролевой guard. Единственный источник истины — ReferralProfile в sessionStorage.
+ * Синхронная проверка — без async задержки, без лишних рендеров.
  */
 export default function RoleGuard({ allowedRoles, children }) {
-  const { profile, loading } = useBusinessProfile();
+  const profileId = getStoredProfileId();
+  const role = getStoredRole();
 
-  if (loading) return (
-    <div className="fixed inset-0 flex items-center justify-center">
-      <Loader2 className="w-8 h-8 animate-spin text-primary" />
-    </div>
-  );
-
-  if (!profile) return <Navigate to="/secret-login" replace />;
-
-  if (!allowedRoles.includes(profile.role)) {
-    return <Navigate to={roleHomePath(profile.role)} replace />;
-  }
+  if (!profileId) return <Navigate to="/secret-login" replace />;
+  if (!allowedRoles.includes(role)) return <Navigate to={roleHomePath(role)} replace />;
 
   return children;
 }
