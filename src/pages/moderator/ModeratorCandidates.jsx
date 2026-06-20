@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createRewardChain } from "@/lib/programUtils";
+import { createRewardChain, MIN_QUOTA } from "@/lib/programUtils";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

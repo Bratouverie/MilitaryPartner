@@ -40,10 +40,12 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
     e.preventDefault();
     setError("");
     if (currentRole !== "super_admin") { setError("Недостаточно прав."); return; }
+    // Email обязателен для staff
+    const emailLower = form.email.trim().toLowerCase();
+    if (!emailLower) { setError("Email обязателен для staff-аккаунтов."); return; }
     setLoading(true);
     try {
-      const emailLower = form.email.trim().toLowerCase();
-      if (emailLower) {
+      {
         const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
         if (existing.length > 0) { setError("Пользователь с таким email уже существует."); return; }
       }
@@ -60,7 +62,7 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
       const now = new Date().toISOString();
 
       const profile = await base44.entities.ReferralProfile.create({
-        ...(emailLower ? { email: emailLower } : {}),
+        email: emailLower,
         full_name: form.full_name || (form.role === "admin" ? "Администратор" : "Модератор"),
         role: form.role,
         status: "active",
@@ -71,8 +73,8 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
         master_link_id: form.master_link_id || undefined,
       });
 
-      // Если email указан — слать на email как доп. канал
-      if (emailLower) {
+      // Email обязателен — всегда отправляем
+      {
         await base44.integrations.Core.SendEmail({
           to: emailLower,
           subject: `Ваш аккаунт — МилитариПартнер`,
@@ -155,9 +157,9 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
             <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Полное имя" autoFocus />
           </div>
           <div>
-            <Label>Email (необязательно)</Label>
-            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="staff@example.com" />
-            <p className="text-xs text-muted-foreground mt-1">Если указан — код будет отправлен на email дополнительно</p>
+            <Label>Email *</Label>
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="staff@example.com" required />
+            <p className="text-xs text-muted-foreground mt-1">Обязателен. Секретный код будет отправлен на этот адрес.</p>
           </div>
           <div>
             <Label>Роль *</Label>
