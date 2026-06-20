@@ -94,7 +94,7 @@ export function calcRewardDistribution(chain) {
   const total = result.reduce((s, r) => s + r.amount, 0);
   const rootQuota = chain[chain.length - 1]?.reward_quota || 0;
   if (total !== rootQuota) {
-    console.warn(`[programUtils] Несоответствие суммы: ${total} ≠ ${rootQuota}`);
+    throw new Error(`[CRITICAL] Payout distribution mismatch: total ${total} ≠ rootQuota ${rootQuota}. Reward chain corrupted.`);
   }
   return result;
 }
@@ -154,20 +154,24 @@ export async function createRewardChain({ candidateId, programId, rewardType = "
     created.push(reward);
   }
 
-  await base44.entities.ActionLog.create({
-    actor_user_id: actorUserId || "system",
-    action_type: "REWARD_CHAIN_CREATED",
-    entity_type: "CandidateApplication",
-    entity_id: candidateId,
-    action_payload: JSON.stringify({
-      program_id: programId,
-      root_program_id: rootProgram?.id,
-      chain_length: chain.length,
-      total_amount: distribution.reduce((s, r) => s + r.amount, 0),
-      reward_type: rewardType,
-      allocation: distribution.map(r => ({ program_id: r.program.id, owner: r.program.owner_user_id, amount: r.amount, level: r.level })),
-    }),
-  }).catch(() => {});
+  try {
+    await base44.entities.ActionLog.create({
+      actor_user_id: actorUserId || "system",
+      action_type: "REWARD_CHAIN_CREATED",
+      entity_type: "CandidateApplication",
+      entity_id: candidateId,
+      action_payload: JSON.stringify({
+        program_id: programId,
+        root_program_id: rootProgram?.id,
+        chain_length: chain.length,
+        total_amount: distribution.reduce((s, r) => s + r.amount, 0),
+        reward_type: rewardType,
+        allocation: distribution.map(r => ({ program_id: r.program.id, owner: r.program.owner_user_id, amount: r.amount, level: r.level })),
+      }),
+    });
+  } catch (e) {
+    console.error("[programUtils] ActionLog failed (non-critical):", e);
+  }
 
   return created;
 }
@@ -269,20 +273,24 @@ export async function createChildProgram({ parentProgram, title: childPrefixTitl
     can_create_child: ((parentProgram.direct_children_count || 0) + 1 < MAX_DIRECT_CHILDREN) && (parentProgram.reward_quota > MIN_QUOTA),
   });
 
-  await base44.entities.ActionLog.create({
-    actor_user_id: actorUserId || ownerUserId,
-    action_type: "CHILD_PROGRAM_CREATED",
-    entity_type: "ReferralProgram",
-    entity_id: child.id,
-    action_payload: JSON.stringify({
-      parent_id: parentProgram.id,
-      root_id: child.root_program_id,
-      depth: child.depth,
-      reward_quota: childQuota,
-      ancestry: ancestryJson,
-      owner_user_id: ownerUserId,
-    }),
-  }).catch(() => {});
+  try {
+    await base44.entities.ActionLog.create({
+      actor_user_id: actorUserId || ownerUserId,
+      action_type: "CHILD_PROGRAM_CREATED",
+      entity_type: "ReferralProgram",
+      entity_id: child.id,
+      action_payload: JSON.stringify({
+        parent_id: parentProgram.id,
+        root_id: child.root_program_id,
+        depth: child.depth,
+        reward_quota: childQuota,
+        ancestry: ancestryJson,
+        owner_user_id: ownerUserId,
+      }),
+    });
+  } catch (e) {
+    console.error("[programUtils] ActionLog failed (non-critical):", e);
+  }
 
   return { program: child, error: null };
 }
@@ -380,19 +388,23 @@ export async function createPromotedRootProgram({
     joined_at: now,
   });
 
-  await base44.entities.ActionLog.create({
-    actor_user_id: actorUserId || ownerUserId,
-    action_type: "PROMOTED_PROGRAM_CREATED",
-    entity_type: "ReferralProgram",
-    entity_id: promoted.id,
-    action_payload: JSON.stringify({
-      origin_program_id: originProgram.id,
-      owner_user_id: ownerUserId,
-      new_quota: newQuota,
-      region_code: regionCode,
-      note: "ВАРИАНТ_C: старая ветка не изменена",
-    }),
-  }).catch(() => {});
+  try {
+    await base44.entities.ActionLog.create({
+      actor_user_id: actorUserId || ownerUserId,
+      action_type: "PROMOTED_PROGRAM_CREATED",
+      entity_type: "ReferralProgram",
+      entity_id: promoted.id,
+      action_payload: JSON.stringify({
+        origin_program_id: originProgram.id,
+        owner_user_id: ownerUserId,
+        new_quota: newQuota,
+        region_code: regionCode,
+        note: "ВАРИАНТ_C: старая ветка не изменена",
+      }),
+    });
+  } catch (e) {
+    console.error("[programUtils] ActionLog failed (non-critical):", e);
+  }
 
   return { program: promoted, error: null };
 }

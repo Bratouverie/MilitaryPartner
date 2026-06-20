@@ -37,31 +37,35 @@ export default function Payouts() {
   useEffect(() => {
     if (!profile) return;
     setLoading(true);
-    base44.entities.PaymentProfile.filter({ user_id: profile.id }).then(pp => {
-      if (pp[0]) {
-         const p = pp[0];
-         setPaymentProfile(p);
-         setForm({
-           recipient_name: p.recipient_name || "",
-           date_of_birth: p.date_of_birth || "",
-           passport_series: p.passport_series || "",
-           passport_number: p.passport_number || "",
-           passport_issued_by: p.passport_issued_by || "",
-           passport_issued_date: p.passport_issued_date || "",
-           passport_subdivision_code: p.passport_subdivision_code || "",
-           registration_address: p.registration_address || "",
-           inn: p.inn || "",
-           snils: p.snils || "",
-           payment_method: p.payment_method || "bank_transfer",
-           bank_name: p.bank_name || "",
-           bik: p.bik || "",
-           account_number: p.account_number || "",
-           card_number: p.card_number || "",
-           phone_for_sbp: p.phone_for_sbp || "",
-         });
-       }
-      setLoading(false);
-    });
+    base44.entities.PaymentProfile.filter({ user_id: profile.id })
+      .then(pp => {
+        if (pp[0]) {
+          const p = pp[0];
+          setPaymentProfile(p);
+          setForm({
+            recipient_name: p.recipient_name || "",
+            date_of_birth: p.date_of_birth || "",
+            passport_series: p.passport_series || "",
+            passport_number: p.passport_number || "",
+            passport_issued_by: p.passport_issued_by || "",
+            passport_issued_date: p.passport_issued_date || "",
+            passport_subdivision_code: p.passport_subdivision_code || "",
+            registration_address: p.registration_address || "",
+            inn: p.inn || "",
+            snils: p.snils || "",
+            payment_method: p.payment_method || "bank_transfer",
+            bank_name: p.bank_name || "",
+            bik: p.bik || "",
+            account_number: p.account_number || "",
+            card_number: p.card_number || "",
+            phone_for_sbp: p.phone_for_sbp || "",
+          });
+        }
+      })
+      .catch(e => {
+        console.error("[Payouts] Load failed:", e);
+      })
+      .finally(() => setLoading(false));
   }, [profile?.id]);
 
   const handleSave = async () => {
@@ -69,9 +73,18 @@ export default function Payouts() {
      if (!form.date_of_birth) { toast({ title: "Заполните дату рождения", variant: "destructive" }); return; }
      if (!form.passport_series || !form.passport_number) { toast({ title: "Заполните номер паспорта", variant: "destructive" }); return; }
      if (!form.registration_address.trim()) { toast({ title: "Заполните адрес регистрации", variant: "destructive" }); return; }
+
+     // Validate formats
+     if (!/^\d{4}$/.test(form.passport_series)) { toast({ title: "Серия паспорта должна быть 4 цифры", variant: "destructive" }); return; }
+     if (!/^\d{6}$/.test(form.passport_number)) { toast({ title: "Номер паспорта должен быть 6 цифр", variant: "destructive" }); return; }
+     if (form.inn && !/^\d{10,12}$/.test(form.inn)) { toast({ title: "ИНН должен быть 10 или 12 цифр", variant: "destructive" }); return; }
+     if (form.snils && !/^\d{3}-\d{3}-\d{3}-\d{2}$/.test(form.snils)) { toast({ title: "СНИЛС: формат ХХХ-ХХХ-ХХХ-ХХ", variant: "destructive" }); return; }
+     if (form.bik && !/^\d{9}$/.test(form.bik)) { toast({ title: "БИК должен быть 9 цифр", variant: "destructive" }); return; }
+
      setSaving(true);
      try {
-       const data = { ...form, verification_status: "pending_review" };
+       const newStatus = paymentProfile?.verification_status === "rejected" ? "pending_review" : "pending_review";
+       const data = { ...form, verification_status: newStatus };
        if (paymentProfile) {
          await base44.entities.PaymentProfile.update(paymentProfile.id, data);
          setPaymentProfile(p => ({ ...p, ...data }));
@@ -80,7 +93,10 @@ export default function Payouts() {
          setPaymentProfile(pp);
        }
        toast({ title: "✓ Реквизиты сохранены! Ожидайте подтверждения администратором." });
-     } catch { toast({ title: "Ошибка сохранения", variant: "destructive" }); }
+     } catch (e) {
+       console.error("[Payouts] Save failed:", e);
+       toast({ title: "Ошибка сохранения", description: e.message, variant: "destructive" });
+     }
      finally { setSaving(false); }
    };
 
@@ -195,14 +211,21 @@ export default function Payouts() {
         )}
 
         {isApproved ? (
-          <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
-            <CheckCircle className="w-4 h-4" />Профиль подтверждён — реквизиты заблокированы для редактирования
-          </div>
-        ) : (
-          <Button onClick={handleSave} disabled={saving} className="w-full bg-primary font-bold h-12 rounded-xl">
-            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5 mr-2" />Сохранить реквизиты</>}
-          </Button>
-        )}
+             <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+               <CheckCircle className="w-4 h-4" />Профиль подтверждён — реквизиты заблокированы для редактирования
+             </div>
+           ) : verStatus === "rejected" ? (
+             <div className="space-y-3">
+               <div className="text-sm text-red-600 font-medium">Профиль был отклонен. Исправьте данные и повторите попытку.</div>
+               <Button onClick={handleSave} disabled={saving} className="w-full bg-primary font-bold h-12 rounded-xl">
+                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5 mr-2" />Повторить отправку</>}
+               </Button>
+             </div>
+           ) : (
+             <Button onClick={handleSave} disabled={saving} className="w-full bg-primary font-bold h-12 rounded-xl">
+               {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <><CreditCard className="w-5 h-5 mr-2" />Сохранить реквизиты</>}
+             </Button>
+           )}
       </div>
     </div>
   );

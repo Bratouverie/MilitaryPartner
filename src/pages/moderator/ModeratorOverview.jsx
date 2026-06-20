@@ -61,7 +61,9 @@ export default function ModeratorOverview() {
     setCandidatesLoading(true);
     base44.entities.CandidateApplication.filter({ assigned_moderator_id: profile.id }, "-created_date", 50)
       .then(c => { setCandidates(c); setCandidatesLoaded(true); })
-      .catch(() => {})
+      .catch(e => {
+        console.error("[ModeratorOverview] Candidates load failed:", e);
+      })
       .finally(() => setCandidatesLoading(false));
   };
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, CheckCircle, XCircle, DollarSign, Users } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, DollarSign, Users, AlertCircle } from "lucide-react";
 import moment from "moment";
 
 const VS_COLORS = { not_filled: "bg-gray-100 text-gray-600", pending_review: "bg-amber-100 text-amber-700", approved: "bg-green-100 text-green-700", rejected: "bg-red-100 text-red-700" };
@@ -29,6 +29,8 @@ export default function AdminPayouts() {
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(null);
+  const [rejectReason, setRejectReason] = useState({});
+  const [showRejectForm, setShowRejectForm] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -37,25 +39,71 @@ export default function AdminPayouts() {
     ]).then(([r, p]) => {
       setRewards(r);
       setProfiles(p);
+    }).catch(e => {
+      console.error("[AdminPayouts] Load failed:", e);
+      toast({ title: "Ошибка загрузки", variant: "destructive" });
     }).finally(() => setLoading(false));
   }, []);
 
-  const updateRewardStatus = async (id, newStatus) => {
+  const updateRewardStatus = async (id, newStatus, reason = null) => {
     setUpdating(id);
     try {
       const updates = { status: newStatus };
-      if (newStatus === "paid") updates.paid_at = new Date().toISOString();
+      if (newStatus === "paid") {
+        updates.paid_at = new Date().toISOString();
+      } else if (newStatus === "rejected" && reason) {
+        updates.admin_comment = reason;
+      }
       await base44.entities.Reward.update(id, updates);
+      
+      // Log transition
+      try {
+        await base44.asServiceRole.entities.ActionLog.create({
+          action_type: "REWARD_STATUS_CHANGED",
+          entity_type: "Reward",
+          entity_id: id,
+          action_payload: JSON.stringify({ old_status: rewards.find(r => r.id === id)?.status, new_status: newStatus, reason }),
+        });
+      } catch (logErr) {
+        console.warn("[AdminPayouts] ActionLog failed:", logErr);
+      }
+      
       toast({ title: "Статус выплаты обновлён!" });
-      setRewards(r => r.map(x => x.id === id ? { ...x, status: newStatus, paid_at: newStatus === "paid" ? new Date().toISOString() : x.paid_at } : x));
-    } catch { toast({ title: "Ошибка", variant: "destructive" }); }
-    finally { setUpdating(null); }
+      setRewards(r => r.map(x => x.id === id ? { ...x, status: newStatus, paid_at: newStatus === "paid" ? new Date().toISOString() : x.paid_at, admin_comment: reason || x.admin_comment } : x));
+      setShowRejectForm(null);
+      setRejectReason({});
+    } catch (e) {
+      console.error("[AdminPayouts] Update failed:", e);
+      toast({ title: "Ошибка обновления", description: e.message, variant: "destructive" });
+    } finally {
+      setUpdating(null);
+    }
   };
 
-  const updateVerification = async (id, status) => {
-    await base44.entities.PaymentProfile.update(id, { verification_status: status });
-    toast({ title: `Статус: ${VS_LABELS[status]}` });
-    setProfiles(p => p.map(x => x.id === id ? { ...x, verification_status: status } : x));
+  const updateVerification = async (id, status, comment = null) => {
+    try {
+      const updates = { verification_status: status };
+      if (comment) updates.admin_comment = comment;
+      await base44.entities.PaymentProfile.update(id, updates);
+      
+      // Log transition
+      try {
+        await base44.asServiceRole.entities.ActionLog.create({
+          action_type: "PAYMENT_PROFILE_STATUS_CHANGED",
+          entity_type: "PaymentProfile",
+          entity_id: id,
+          action_payload: JSON.stringify({ new_status: status, comment }),
+        });
+      } catch (logErr) {
+        console.warn("[AdminPayouts] ActionLog failed:", logErr);
+      }
+      
+      toast({ title: `Статус: ${VS_LABELS[status]}` });
+      setProfiles(p => p.map(x => x.id === id ? { ...x, verification_status: status, admin_comment: comment || x.admin_comment } : x));
+    } catch (e) {
+      console.error("[AdminPayouts] Verification update failed:", e);
+      toast({ title: "Ошибка", variant: "destructive" });
+    }
   };
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
@@ -103,35 +151,52 @@ export default function AdminPayouts() {
               </thead>
               <tbody className="divide-y divide-border">
                 {rewards.map(r => (
-                  <tr key={r.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium truncate" title={r.candidate_id}>{r.candidate_id?.slice(0,6)}…</td>
-                    <td className="px-4 py-3 text-sm truncate" title={r.beneficiary_user_id}>{r.beneficiary_user_id?.slice(0,6)}…</td>
-                    <td className="px-4 py-3 text-sm font-bold text-accent">{(r.amount || 0).toLocaleString()} ₽</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REWARD_STATUS_COLORS[r.status]}`}>
-                        {REWARD_STATUS_LABELS[r.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {r.status === "pending" && (
-                        <select className="h-7 px-2 text-xs border border-input rounded" onChange={e => updateRewardStatus(r.id, e.target.value)} disabled={updating === r.id}>
-                          <option value="">Действие…</option>
-                          <option value="approved">Одобрить</option>
-                          <option value="rejected">Отклонить</option>
-                        </select>
-                      )}
-                      {r.status === "approved" && (
-                        <Button size="sm" variant="outline" onClick={() => updateRewardStatus(r.id, "processing")} disabled={updating === r.id} className="h-7 text-xs">
-                          В обработку
-                        </Button>
-                      )}
-                      {r.status === "processing" && (
-                        <Button size="sm" variant="outline" onClick={() => updateRewardStatus(r.id, "paid")} disabled={updating === r.id} className="h-7 text-xs bg-green-50">
-                          ✓ Выплачено
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={r.id}>
+                    <tr className="hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 text-sm font-medium truncate" title={r.candidate_id}>{r.candidate_id?.slice(0,6)}…</td>
+                      <td className="px-4 py-3 text-sm truncate" title={r.beneficiary_user_id}>{r.beneficiary_user_id?.slice(0,6)}…</td>
+                      <td className="px-4 py-3 text-sm font-bold text-accent">{(r.amount || 0).toLocaleString()} ₽</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REWARD_STATUS_COLORS[r.status]}`}>
+                            {REWARD_STATUS_LABELS[r.status]}
+                          </span>
+                          {r.admin_comment && <AlertCircle className="w-4 h-4 text-amber-600" title={r.admin_comment} />}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {r.status === "pending" && (
+                          <div className="flex gap-1">
+                            <button className="h-7 px-2 text-xs border border-input rounded hover:bg-green-50" onClick={() => updateRewardStatus(r.id, "approved")} disabled={updating === r.id}>✓ OK</button>
+                            <button className="h-7 px-2 text-xs border border-input rounded hover:bg-red-50" onClick={() => setShowRejectForm(r.id)} disabled={updating === r.id}>✕ Reject</button>
+                          </div>
+                        )}
+                        {r.status === "approved" && (
+                          <Button size="sm" variant="outline" onClick={() => updateRewardStatus(r.id, "processing")} disabled={updating === r.id} className="h-7 text-xs">
+                            В обработку
+                          </Button>
+                        )}
+                        {r.status === "processing" && (
+                          <Button size="sm" variant="outline" onClick={() => updateRewardStatus(r.id, "paid")} disabled={updating === r.id} className="h-7 text-xs bg-green-50">
+                            ✓ Выплачено
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                    {showRejectForm === r.id && (
+                      <tr className="bg-red-50">
+                        <td colSpan="5" className="px-4 py-3">
+                          <div className="space-y-2">
+                            <input type="text" placeholder="Причина отклонения…" value={rejectReason[r.id] || ""} onChange={e => setRejectReason({...rejectReason, [r.id]: e.target.value})} className="w-full px-2 py-1 text-sm border border-red-300 rounded" />
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="destructive" onClick={() => updateRewardStatus(r.id, "rejected", rejectReason[r.id])} disabled={updating === r.id || !rejectReason[r.id]} className="text-xs">Отклонить с причиной</Button>
+                              <Button size="sm" variant="outline" onClick={() => setShowRejectForm(null)} className="text-xs">Отмена</Button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
