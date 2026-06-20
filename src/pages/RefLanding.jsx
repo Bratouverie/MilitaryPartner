@@ -255,7 +255,7 @@ export default function RefLanding() {
         <Shield className="w-16 h-16 text-amber-500" />
         <h1 className="font-heading text-2xl font-bold">Программа приостановлена</h1>
         <p className="text-muted-foreground max-w-sm">
-          Программа «{program?.title}» временно не принимает новых партнёров. Обратитесь к пригласившему вас человеку.
+          Программа «{getPublicTitle(program)}» временно не принимает новых партнёров. Обратитесь к пригласившему вас человеку.
         </p>
         <Link to="/"><Button variant="outline">На главную</Button></Link>
       </div>

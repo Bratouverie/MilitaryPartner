@@ -157,7 +157,7 @@ export default function CandidateForm() {
           </div>
           <h1 className="font-heading text-2xl font-bold mb-3">Анкета отправлена!</h1>
           <p className="text-muted-foreground mb-2">Куратор свяжется с вами в ближайшее время для уточнения деталей.</p>
-          <p className="text-sm text-muted-foreground">Программа: <strong>{getPublicTitle(program)}</strong></p>
+          <p className="text-sm text-muted-foreground"><strong>{getPublicTitle(program)}</strong></p>
         </div>
       </div>
     </div>

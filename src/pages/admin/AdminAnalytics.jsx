@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { Loader2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { getInternalTitle } from "@/lib/programUtils";
 
 const COLORS = ["#1a5c3a","#d4af37","#3b82f6","#ef4444","#8b5cf6","#14b8a6","#f97316","#6b7280"];
 
@@ -30,8 +31,10 @@ export default function AdminAnalytics() {
         base44.entities.ReferralProfile.filter({ role: "moderator" }),
       ]);
 
-      const rootPrograms = allPrograms.filter(p => p.is_root);
-      const childPrograms = allPrograms.filter(p => !p.is_root);
+      // Исключаем archived программы из основной статистики
+      const activePrograms = allPrograms.filter(p => !p.is_archived);
+      const rootPrograms = activePrograms.filter(p => p.is_root);
+      const childPrograms = activePrograms.filter(p => !p.is_root);
 
       // Кандидаты по статусам
       const byStatus = {};
@@ -43,31 +46,31 @@ export default function AdminAnalytics() {
       rewards.forEach(r => { byRewardStatus[r.status] = (byRewardStatus[r.status] || 0) + (r.amount || 0); });
       const rewardChart = Object.entries(byRewardStatus).map(([k, v]) => ({ name: REWARD_STATUS_RU[k] || k, value: v }));
 
-      // Топ программ по кандидатам
-      const topPrograms = [...allPrograms].sort((a, b) => (b.candidates_count || 0) - (a.candidates_count || 0)).slice(0, 8)
-        .map(p => ({ name: p.title.slice(0, 20), value: p.candidates_count || 0 }));
+      // Топ программ по кандидатам (без archived)
+      const topPrograms = [...activePrograms].sort((a, b) => (b.candidates_count || 0) - (a.candidates_count || 0)).slice(0, 8)
+        .map(p => ({ name: getInternalTitle(p).slice(0, 20), value: p.candidates_count || 0 }));
 
-      // Распределение по глубине веток
+      // Распределение по глубине веток (без archived)
       const byDepth = {};
-      allPrograms.forEach(p => { const d = p.depth || 0; byDepth[d] = (byDepth[d] || 0) + 1; });
+      activePrograms.forEach(p => { const d = p.depth || 0; byDepth[d] = (byDepth[d] || 0) + 1; });
       const depthChart = Object.entries(byDepth).map(([k, v]) => ({ name: `Глубина ${k}`, value: v }));
 
       // Топ рефералов по выплатам
       const topReferrers = [...referrers].sort((a, b) => (b.total_earned || 0) - (a.total_earned || 0)).slice(0, 8)
         .map(r => ({ name: (r.full_name || "—").slice(0, 16), value: r.total_earned || 0 }));
 
-      // Топ модераторов по количеству программ
+      // Топ модераторов по количеству программ (без archived)
       const modPrograms = {};
-      allPrograms.forEach(p => { if (p.assigned_moderator_id) modPrograms[p.assigned_moderator_id] = (modPrograms[p.assigned_moderator_id] || 0) + 1; });
+      activePrograms.forEach(p => { if (p.assigned_moderator_id) modPrograms[p.assigned_moderator_id] = (modPrograms[p.assigned_moderator_id] || 0) + 1; });
       const topModerators = moderators.map(m => ({
         name: (m.full_name || "—").slice(0, 16),
         value: modPrograms[m.id] || 0,
         candidates: candidates.filter(c => c.assigned_moderator_id === m.id).length,
       })).sort((a, b) => b.value - a.value).slice(0, 8);
 
-      // Средняя глубина
-      const avgDepth = allPrograms.length > 0
-        ? (allPrograms.reduce((s, p) => s + (p.depth || 0), 0) / allPrograms.length).toFixed(1)
+      // Средняя глубина (без archived)
+      const avgDepth = activePrograms.length > 0
+        ? (activePrograms.reduce((s, p) => s + (p.depth || 0), 0) / activePrograms.length).toFixed(1)
         : 0;
       const avgChildren = rootPrograms.length > 0
         ? (childPrograms.length / rootPrograms.length).toFixed(1)
@@ -82,7 +85,7 @@ export default function AdminAnalytics() {
       const totalPending = rewards.filter(r => r.status === "pending").reduce((s, r) => s + (r.amount || 0), 0);
 
       setData({ statusChart, rewardChart, topPrograms, depthChart, topReferrers, topModerators,
-        rootCount: rootPrograms.length, childCount: childPrograms.length, totalPrograms: allPrograms.length,
+        rootCount: rootPrograms.length, childCount: childPrograms.length, totalPrograms: activePrograms.length,
         avgDepth, avgChildren, totalCandidates, contracted, conversionRate, totalPaid, totalPending,
         totalReferrers: referrers.length });
       setLoading(false);
