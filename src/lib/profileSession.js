@@ -9,13 +9,19 @@ const KEY_ROLE = "mp_profile_role";
 const KEY_EMAIL = "mp_profile_email";
 
 export function getStoredProfileId() {
-  return sessionStorage.getItem(KEY_ID);
+  return sessionStorage.getItem(KEY_ID) || null;
 }
 
 export function setStoredProfile(profile) {
+  if (!profile?.id) return;
   sessionStorage.setItem(KEY_ID, profile.id);
-  sessionStorage.setItem(KEY_ROLE, profile.role);
-  sessionStorage.setItem(KEY_EMAIL, profile.email);
+  sessionStorage.setItem(KEY_ROLE, profile.role || "");
+  // Email необязателен — не сохраняем null/undefined как строку
+  if (profile.email) {
+    sessionStorage.setItem(KEY_EMAIL, profile.email);
+  } else {
+    sessionStorage.removeItem(KEY_EMAIL);
+  }
 }
 
 export function clearStoredProfile() {
@@ -25,7 +31,11 @@ export function clearStoredProfile() {
 }
 
 export function getStoredRole() {
-  return sessionStorage.getItem(KEY_ROLE);
+  return sessionStorage.getItem(KEY_ROLE) || null;
+}
+
+export function getStoredEmail() {
+  return sessionStorage.getItem(KEY_EMAIL) || null;
 }
 
 /** Загружает профиль из БД по сохранённому ID. */

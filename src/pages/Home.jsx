@@ -17,7 +17,7 @@ export default function Home() {
       <section className="py-20 bg-background">
         <div className="max-w-3xl mx-auto px-4 text-center">
           <h2 className="font-heading text-3xl md:text-4xl font-bold mb-4">Готов начать зарабатывать?</h2>
-          <p className="text-muted-foreground text-lg mb-8">Укажи только email — реферальная ссылка будет готова сразу.</p>
+          <p className="text-muted-foreground text-lg mb-8">Аккаунт создаётся мгновенно — email не обязателен.</p>
           <Link to="/register-referrer">
             <Button size="lg" className="bg-accent text-accent-foreground hover:bg-accent/90 font-bold text-lg px-8 h-14 rounded-xl">
               Получить ссылку <ArrowRight className="w-5 h-5 ml-2" />

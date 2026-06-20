@@ -35,6 +35,10 @@ export default function Security() {
 
   const handleResend = async () => {
     if (!profile) return;
+    if (!profile.email) {
+      toast({ title: "Email не указан в профиле", description: "Обратитесь к администратору для восстановления доступа.", variant: "destructive" });
+      return;
+    }
     setResending(true);
     try {
       await base44.integrations.Core.SendEmail({
@@ -59,13 +63,15 @@ export default function Security() {
       const masked = maskCode(newCode);
       const now = new Date().toISOString();
       await updateProfile({ secret_code: newCode, masked_secret_code: masked, secret_code_last_sent_at: now });
-      await base44.integrations.Core.SendEmail({
-        to: profile.email,
-        subject: "Новый секретный код — МилитариПартнер",
-        body: `<h2>Ваш новый секретный код</h2><p>Код: <strong style="font-size:18px">${newCode}</strong></p><p>Старый код больше не действует.</p>`,
-      });
+      if (profile.email) {
+        await base44.integrations.Core.SendEmail({
+          to: profile.email,
+          subject: "Новый секретный код — МилитариПартнер",
+          body: `<h2>Ваш новый секретный код</h2><p>Код: <strong style="font-size:18px">${newCode}</strong></p><p>Старый код больше не действует.</p>`,
+        }).catch(() => {});
+      }
       await base44.entities.ActionLog.create({ actor_role: profile.role, action_type: "SECRET_CODE_REGENERATED", entity_type: "ReferralProfile", entity_id: profile.id }).catch(() => {});
-      toast({ title: "Новый код сгенерирован и отправлен!" });
+      toast({ title: profile.email ? "Новый код сгенерирован и отправлен!" : "Новый код сгенерирован. Сохраните его!" });
     } catch {
       toast({ title: "Ошибка", variant: "destructive" });
     } finally { setRegenerating(false); }
@@ -107,7 +113,12 @@ export default function Security() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
+        {!profile.email && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 mb-3">
+            Email не указан — вход только по коду. При потере кода обратитесь к администратору.
+          </div>
+        )}
+        <div className={`grid gap-2 ${profile.email ? "grid-cols-2" : "grid-cols-2"}`}>
           <Button variant="outline" onClick={handleShow} className="h-10 text-sm">
             {showCode ? <EyeOff className="w-4 h-4 mr-1.5" /> : <Eye className="w-4 h-4 mr-1.5" />}
             {showCode ? "Скрыть" : "Показать (3с)"}
@@ -115,10 +126,12 @@ export default function Security() {
           <Button variant="outline" onClick={handleCopy} className="h-10 text-sm">
             <Copy className="w-4 h-4 mr-1.5" /> Копировать
           </Button>
-          <Button variant="outline" onClick={handleResend} disabled={resending} className="h-10 text-sm">
-            {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Mail className="w-4 h-4 mr-1.5" />На email</>}
-          </Button>
-          <Button variant="outline" onClick={handleRegenerate} disabled={regenerating} className="h-10 text-sm text-amber-600 border-amber-200 hover:bg-amber-50">
+          {profile.email && (
+            <Button variant="outline" onClick={handleResend} disabled={resending} className="h-10 text-sm">
+              {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Mail className="w-4 h-4 mr-1.5" />На email</>}
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleRegenerate} disabled={regenerating} className={`h-10 text-sm text-amber-600 border-amber-200 hover:bg-amber-50 ${profile.email ? "" : "col-span-2"}`}>
             {regenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RefreshCw className="w-4 h-4 mr-1.5" />Новый код</>}
           </Button>
         </div>

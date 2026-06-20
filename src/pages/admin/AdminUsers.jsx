@@ -217,7 +217,11 @@ export default function AdminUsers() {
 
   useEffect(() => {
     let f = users;
-    if (search) f = f.filter(u => u.full_name?.toLowerCase().includes(search.toLowerCase()) || u.email?.includes(search));
+    if (search) f = f.filter(u =>
+      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (u.email && u.email.toLowerCase().includes(search.toLowerCase())) ||
+      u.referral_code?.includes(search)
+    );
     if (roleFilter !== "all") f = f.filter(u => u.role === roleFilter);
     setFiltered(f);
   }, [search, roleFilter, users]);
@@ -292,7 +296,7 @@ export default function AdminUsers() {
     setLoaderFor(u.id, null);
   };
 
-  // Regenerate secret code
+  // Regenerate secret code — email отправляется только если указан
   const regenCode = async (u) => {
     if (!isSuperAdmin) return;
     setLoaderFor(u.id, "regen");
@@ -303,18 +307,22 @@ export default function AdminUsers() {
       masked_secret_code: maskCode(secretCode),
       secret_code_last_sent_at: now,
     });
-    await base44.integrations.Core.SendEmail({
-      to: u.email,
-      subject: "Новый секретный код — МилитариПартнер",
-      body: `<p>Ваш новый секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
-    }).catch(() => {});
+    if (u.email) {
+      await base44.integrations.Core.SendEmail({
+        to: u.email,
+        subject: "Новый секретный код — МилитариПартнер",
+        body: `<p>Ваш новый секретный код для входа:</p><p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p><p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
+      }).catch(() => {});
+    }
     await base44.entities.ActionLog.create({
       actor_user_id: currentId, actor_role: currentRole,
       action_type: "SECRET_CODE_REGENERATED",
       entity_type: "ReferralProfile", entity_id: u.id,
-      action_payload: JSON.stringify({ email: u.email }),
+      action_payload: JSON.stringify({ email: u.email || null }),
     }).catch(() => {});
-    toast({ title: "Новый код сгенерирован и отправлен на email" });
+    // Скрываем старый видимый код — данные перезагрузятся
+    setVisibleCodes(prev => ({ ...prev, [u.id]: false }));
+    toast({ title: u.email ? "Новый код сгенерирован и отправлен на email" : "Новый код сгенерирован. Скопируйте и передайте пользователю." });
     setLoaderFor(u.id, null);
     load();
   };
@@ -340,7 +348,7 @@ export default function AdminUsers() {
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Поиск по имени или email…" value={search} onChange={e => setSearch(e.target.value)} />
+          <Input className="pl-9" placeholder="Поиск по имени или email" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select className="h-10 px-3 border border-input rounded-md bg-background text-sm"
           value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
