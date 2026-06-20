@@ -1,7 +1,7 @@
 import React from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { Shield, LayoutDashboard, LinkIcon, Users, Banknote, CreditCard, Trophy, LogOut, Key } from "lucide-react";
+import { clearStoredProfile } from "@/lib/profileSession";
 
 const navItems = [
   { path: "/dashboard", icon: LayoutDashboard, label: "Обзор" },
@@ -15,9 +15,11 @@ const navItems = [
 
 export default function DashboardLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
 
   const handleLogout = () => {
-    base44.auth.logout("/");
+    clearStoredProfile();
+    navigate("/secret-login", { replace: true });
   };
 
   return (

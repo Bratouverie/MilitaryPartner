@@ -17,6 +17,7 @@ import RegisterReferrer from '@/pages/RegisterReferrer';
 import RefLanding from '@/pages/RefLanding';
 import SecretCodeLogin from '@/pages/SecretCodeLogin';
 import ResendCode from '@/pages/ResendCode';
+import AdminBootstrap from '@/pages/AdminBootstrap';
 
 // Dashboard (referrer)
 import DashboardLayout from '@/components/dashboard/DashboardLayout';
@@ -56,13 +57,14 @@ const AuthenticatedApp = () => {
     );
   }
 
+  // Only block on user_not_registered, ignore auth_required (we use our own auth)
   if (authError?.type === 'user_not_registered') {
     return <UserNotRegisteredError />;
   }
 
   return (
     <Routes>
-      {/* Public routes */}
+      {/* Public — no auth required */}
       <Route path="/" element={<Home />} />
       <Route path="/how-it-works" element={<HowItWorks />} />
       <Route path="/guarantees" element={<Guarantees />} />
@@ -71,19 +73,16 @@ const AuthenticatedApp = () => {
       <Route path="/ref/:code" element={<RefLanding />} />
       <Route path="/secret-login" element={<SecretCodeLogin />} />
       <Route path="/resend-code" element={<ResendCode />} />
+      <Route path="/admin-bootstrap" element={<AdminBootstrap />} />
 
-      {/* Legacy login redirect */}
+      {/* Legacy redirects */}
       <Route path="/login" element={<Navigate to="/secret-login" replace />} />
       <Route path="/register" element={<Navigate to="/register-referrer" replace />} />
       <Route path="/forgot-password" element={<Navigate to="/resend-code" replace />} />
       <Route path="/reset-password" element={<Navigate to="/secret-login" replace />} />
 
-      {/* Referrer dashboard — role guard */}
-      <Route path="/dashboard" element={
-        <RoleGuard allowedRoles={["referrer"]}>
-          <DashboardLayout />
-        </RoleGuard>
-      }>
+      {/* Referrer dashboard — guarded by role */}
+      <Route path="/dashboard" element={<RoleGuard allowedRoles={["referrer"]}><DashboardLayout /></RoleGuard>}>
         <Route index element={<Overview />} />
         <Route path="link" element={<MyLink />} />
         <Route path="candidates" element={<MyCandidates />} />
@@ -93,12 +92,8 @@ const AuthenticatedApp = () => {
         <Route path="security" element={<Security />} />
       </Route>
 
-      {/* Admin panel — role guard */}
-      <Route path="/admin" element={
-        <RoleGuard allowedRoles={["admin", "super_admin"]}>
-          <AdminLayout />
-        </RoleGuard>
-      }>
+      {/* Admin panel — guarded by role */}
+      <Route path="/admin" element={<RoleGuard allowedRoles={["admin", "super_admin"]}><AdminLayout /></RoleGuard>}>
         <Route index element={<AdminOverview />} />
         <Route path="master-links" element={<AdminMasterLinks />} />
         <Route path="users" element={<AdminUsers />} />
@@ -109,12 +104,8 @@ const AuthenticatedApp = () => {
         <Route path="logs" element={<AdminLogs />} />
       </Route>
 
-      {/* Moderator CRM — role guard */}
-      <Route path="/moderator" element={
-        <RoleGuard allowedRoles={["moderator"]}>
-          <ModeratorLayout />
-        </RoleGuard>
-      }>
+      {/* Moderator CRM — guarded by role */}
+      <Route path="/moderator" element={<RoleGuard allowedRoles={["moderator"]}><ModeratorLayout /></RoleGuard>}>
         <Route index element={<ModeratorOverview />} />
         <Route path="candidates" element={<ModeratorCandidates />} />
         <Route path="tasks" element={<ModeratorTasks />} />
@@ -136,7 +127,7 @@ function App() {
         <Toaster />
       </QueryClientProvider>
     </AuthProvider>
-  )
+  );
 }
 
 export default App

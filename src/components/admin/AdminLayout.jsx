@@ -1,6 +1,6 @@
 import React from "react";
-import { Outlet, Link, useLocation } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
+import { clearStoredProfile } from "@/lib/profileSession";
 import {
   Shield, LayoutDashboard, Link2, Users, UserCheck,
   Banknote, FileText, BarChart2, ClipboardList, LogOut, Settings
@@ -19,6 +19,8 @@ const navItems = [
 
 export default function AdminLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const handleLogout = () => { clearStoredProfile(); navigate("/secret-login", { replace: true }); };
   return (
     <div className="min-h-screen flex bg-background">
       <aside className="hidden lg:flex flex-col w-64 bg-sidebar border-r border-sidebar-border shrink-0">
@@ -42,7 +44,7 @@ export default function AdminLayout() {
           })}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
-          <button onClick={() => base44.auth.logout("/")}
+          <button onClick={handleLogout}
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent w-full transition-colors">
             <LogOut className="w-4 h-4" /> Выход
           </button>
@@ -55,7 +57,7 @@ export default function AdminLayout() {
             <Shield className="w-5 h-5 text-accent" />
             <span className="font-display font-bold text-primary-foreground">Админ</span>
           </div>
-          <button onClick={() => base44.auth.logout("/")} className="text-primary-foreground/60"><LogOut className="w-5 h-5" /></button>
+          <button onClick={handleLogout} className="text-primary-foreground/60"><LogOut className="w-5 h-5" /></button>
         </header>
         <nav className="lg:hidden flex overflow-x-auto border-b border-border bg-card px-2 py-1.5 gap-1">
           {navItems.map(item => {

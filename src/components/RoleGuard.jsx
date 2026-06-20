@@ -2,14 +2,12 @@ import React from "react";
 import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useBusinessProfile } from "@/lib/useBusinessProfile";
+import { roleHomePath } from "@/lib/profileSession";
 
-const ROLE_REDIRECTS = {
-  referrer: "/dashboard",
-  moderator: "/moderator",
-  admin: "/admin",
-  super_admin: "/admin",
-};
-
+/**
+ * Ролевой guard на основе бизнес-профиля (sessionStorage + ReferralProfile).
+ * Не зависит от BASE44 auth токена.
+ */
 export default function RoleGuard({ allowedRoles, children }) {
   const { profile, loading } = useBusinessProfile();
 
@@ -22,8 +20,7 @@ export default function RoleGuard({ allowedRoles, children }) {
   if (!profile) return <Navigate to="/secret-login" replace />;
 
   if (!allowedRoles.includes(profile.role)) {
-    const dest = ROLE_REDIRECTS[profile.role] || "/secret-login";
-    return <Navigate to={dest} replace />;
+    return <Navigate to={roleHomePath(profile.role)} replace />;
   }
 
   return children;

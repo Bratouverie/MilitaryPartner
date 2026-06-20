@@ -3,12 +3,11 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/components/ui/use-toast";
 import { Link, useNavigate } from "react-router-dom";
 import { Shield, Loader2, Key } from "lucide-react";
+import { setStoredProfile, roleHomePath } from "@/lib/profileSession";
 
 export default function SecretCodeLogin() {
-  const { toast } = useToast();
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", secret_code: "" });
   const [loading, setLoading] = useState(false);
@@ -19,12 +18,26 @@ export default function SecretCodeLogin() {
     setError("");
     setLoading(true);
     try {
-      // Find the profile by email + secret_code
-      const profiles = await base44.entities.ReferralProfile.filter({ email: form.email.trim().toLowerCase() });
+      const emailLower = form.email.trim().toLowerCase();
+      const profiles = await base44.entities.ReferralProfile.filter({ email: emailLower });
+
+      if (profiles.length === 0) {
+        setError("Аккаунт с таким email не найден. Проверьте данные или зарегистрируйтесь.");
+        setLoading(false);
+        return;
+      }
+
       const profile = profiles.find(p => p.secret_code === form.secret_code.trim());
 
       if (!profile) {
-        setError("Неверный email или секретный код. Проверьте данные и попробуйте снова.");
+        setError("Неверный секретный код. Проверьте код — он был отправлен вам на email при регистрации.");
+        // Log failed attempt
+        await base44.entities.ActionLog.create({
+          actor_role: "unknown",
+          action_type: "LOGIN_FAILED_WRONG_CODE",
+          entity_type: "ReferralProfile",
+          action_payload: JSON.stringify({ email: emailLower }),
+        }).catch(() => {});
         setLoading(false);
         return;
       }
@@ -35,32 +48,33 @@ export default function SecretCodeLogin() {
         return;
       }
 
-      // Update last_login_at
-      await base44.entities.ReferralProfile.update(profile.id, {
-        last_login_at: new Date().toISOString()
-      });
+      if (!profile.role) {
+        setError("Роль пользователя не определена. Обратитесь к администратору.");
+        setLoading(false);
+        return;
+      }
 
-      // Log the login
+      // Update last_login_at
+      const now = new Date().toISOString();
+      await base44.entities.ReferralProfile.update(profile.id, { last_login_at: now });
+
+      // Action log
       await base44.entities.ActionLog.create({
         actor_role: profile.role,
-        action_type: "LOGIN_SECRET_CODE",
+        action_type: "LOGIN_SUCCESS",
         entity_type: "ReferralProfile",
         entity_id: profile.id,
-        action_payload: JSON.stringify({ email: form.email })
-      });
+        action_payload: JSON.stringify({ email: emailLower, role: profile.role }),
+      }).catch(() => {});
 
-      // Store profile id in sessionStorage for session-like behavior
-      sessionStorage.setItem("mp_profile_id", profile.id);
-      sessionStorage.setItem("mp_profile_role", profile.role);
-      sessionStorage.setItem("mp_profile_email", profile.email);
+      // Store session
+      setStoredProfile({ ...profile, last_login_at: now });
 
-      // Redirect based on role
-      if (profile.role === "referrer") navigate("/dashboard");
-      else if (profile.role === "moderator") navigate("/moderator");
-      else navigate("/admin");
+      // Redirect by role
+      navigate(roleHomePath(profile.role), { replace: true });
 
-    } catch {
-      setError("Произошла ошибка. Попробуйте ещё раз.");
+    } catch (err) {
+      setError("Произошла ошибка при попытке входа. Попробуйте ещё раз.");
     } finally {
       setLoading(false);
     }
@@ -85,7 +99,9 @@ export default function SecretCodeLogin() {
             </div>
           </div>
           <h1 className="font-heading text-3xl font-bold text-center mb-2">Вход по Secret Code</h1>
-          <p className="text-muted-foreground text-center mb-8">Введите email и ваш секретный код для входа в систему</p>
+          <p className="text-muted-foreground text-center mb-8">
+            Введите email и секретный код — пароль не нужен
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6">
             <div>
@@ -93,9 +109,10 @@ export default function SecretCodeLogin() {
               <Input
                 type="email"
                 value={form.email}
-                onChange={e => setForm(f => ({...f, email: e.target.value}))}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 required
                 placeholder="ваш@email.com"
+                autoComplete="email"
               />
             </div>
             <div>
@@ -103,12 +120,15 @@ export default function SecretCodeLogin() {
               <Input
                 type="text"
                 value={form.secret_code}
-                onChange={e => setForm(f => ({...f, secret_code: e.target.value}))}
+                onChange={e => setForm(f => ({ ...f, secret_code: e.target.value }))}
                 required
-                placeholder="Ваш секретный код"
+                placeholder="Код из вашего email"
                 className="font-mono"
+                autoComplete="off"
               />
-              <p className="text-xs text-muted-foreground mt-1">Код был отправлен на ваш email при регистрации</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Код был отправлен на ваш email при регистрации
+              </p>
             </div>
 
             {error && (
@@ -122,18 +142,20 @@ export default function SecretCodeLogin() {
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            Нет аккаунта?{" "}
-            <Link to="/register-referrer" className="text-primary font-medium hover:underline">
-              Зарегистрироваться
-            </Link>
-          </p>
-          <p className="text-center text-sm text-muted-foreground mt-2">
-            Потеряли код?{" "}
-            <Link to="/resend-code" className="text-primary font-medium hover:underline">
-              Получить код на email
-            </Link>
-          </p>
+          <div className="text-center mt-6 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Нет аккаунта?{" "}
+              <Link to="/register-referrer" className="text-primary font-medium hover:underline">
+                Получить реферальную ссылку
+              </Link>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Потеряли код?{" "}
+              <Link to="/resend-code" className="text-primary font-medium hover:underline">
+                Получить код на email
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </div>
