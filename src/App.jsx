@@ -16,6 +16,7 @@ import Guarantees from '@/pages/Guarantees';
 import FAQPage from '@/pages/FAQPage';
 import RegisterReferrer from '@/pages/RegisterReferrer';
 import RefLanding from '@/pages/RefLanding';
+import CandidateForm from '@/pages/CandidateForm';
 import SecretCodeLogin from '@/pages/SecretCodeLogin';
 import ResendCode from '@/pages/ResendCode';
 import AdminBootstrap from '@/pages/AdminBootstrap';
@@ -64,6 +65,8 @@ const AuthenticatedApp = () => {
       <Route path="/faq" element={<FAQPage />} />
       <Route path="/register-referrer" element={<RegisterReferrer />} />
       <Route path="/ref/:code" element={<RefLanding />} />
+      <Route path="/join/:code" element={<RefLanding />} />
+      <Route path="/candidate/:formCode" element={<CandidateForm />} />
       <Route path="/secret-login" element={<SecretCodeLogin />} />
       <Route path="/resend-code" element={<ResendCode />} />
       <Route path="/admin-bootstrap" element={<AdminBootstrap />} />

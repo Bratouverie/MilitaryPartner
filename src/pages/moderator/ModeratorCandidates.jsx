@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createRewardChain } from "@/lib/programUtils";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,14 +74,21 @@ export default function ModeratorCandidates() {
       await base44.entities.CandidateStatusHistory.create({ candidate_id: selected.id, old_status: old, new_status: newStatus, changed_by_user_id: moderatorProfileId });
       await base44.entities.ActionLog.create({ actor_role: "moderator", action_type: "CANDIDATE_STATUS_CHANGED", entity_type: "CandidateApplication", entity_id: selected.id, action_payload: JSON.stringify({ old, new: newStatus }) });
 
-      // Auto-create reward on milestone
-      if (["CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY"].includes(newStatus) && selected.source_referrer_id) {
+      // Каскадное создание reward по всей цепочке программ
+      if (["CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY"].includes(newStatus) && selected.source_program_id) {
+        await createRewardChain({
+          candidateId: selected.id,
+          programId: selected.source_program_id,
+          rewardType: newStatus.toLowerCase(),
+          actorUserId: moderatorProfileId,
+        });
+      } else if (["CONTRACT_SIGNED","UNIT_ASSIGNED","RETURNED_HEALTHY"].includes(newStatus) && selected.source_referrer_id) {
+        // Legacy fallback: если нет source_program_id
         const existing = await base44.entities.Reward.filter({ candidate_id: selected.id, reward_type: newStatus.toLowerCase() });
         if (existing.length === 0) {
-          const refProfile = await base44.entities.ReferralProfile.filter({ id: selected.source_referrer_id });
-          const amount = refProfile[0]?.referral_reward || 50000;
+          const refProfiles = await base44.entities.ReferralProfile.filter({ id: selected.source_referrer_id });
+          const amount = refProfiles[0]?.referral_reward || 50000;
           await base44.entities.Reward.create({ candidate_id: selected.id, beneficiary_user_id: selected.source_referrer_id, source_referrer_id: selected.source_referrer_id, amount, reward_type: newStatus.toLowerCase(), status: "pending" });
-          await base44.entities.ActionLog.create({ actor_role: "moderator", action_type: "REWARD_CREATED", entity_type: "Reward", action_payload: JSON.stringify({ candidate_id: selected.id, milestone: newStatus }) });
         }
       }
 

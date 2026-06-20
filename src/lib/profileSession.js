@@ -38,6 +38,13 @@ export function getStoredEmail() {
   return sessionStorage.getItem(KEY_EMAIL) || null;
 }
 
+/** Возвращает базовый объект профиля из sessionStorage (только id, role, email) */
+export function getStoredProfile() {
+  const id = getStoredProfileId();
+  if (!id) return null;
+  return { id, role: getStoredRole(), email: getStoredEmail() };
+}
+
 /** Загружает профиль из БД по сохранённому ID. */
 export async function loadProfile() {
   const id = getStoredProfileId();
