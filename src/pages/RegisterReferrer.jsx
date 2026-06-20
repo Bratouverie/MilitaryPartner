@@ -25,7 +25,8 @@ const maskCode = (code) => {
 export default function RegisterReferrer() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState(""); // необязательный
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState("");
 
@@ -44,16 +45,18 @@ export default function RegisterReferrer() {
       return;
     }
 
-    const emailLower = email.trim().toLowerCase();
     setLoading(true);
-
     try {
-      // Check duplicate
-      const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
-      if (existing.length > 0) {
-        setError("Пользователь с таким email уже зарегистрирован. Войдите по вашему секретному коду.");
-        setLoading(false);
-        return;
+      const emailLower = email.trim().toLowerCase();
+
+      // Проверка дубля только если email указан
+      if (emailLower) {
+        const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
+        if (existing.length > 0) {
+          setError("Пользователь с таким email уже зарегистрирован. Войдите по вашему секретному коду.");
+          setLoading(false);
+          return;
+        }
       }
 
       // Auto-select master link
@@ -61,24 +64,28 @@ export default function RegisterReferrer() {
       let masterLink = allLinks.find(l => l.is_default_public) || null;
       if (!masterLink && allLinks.length === 1) masterLink = allLinks[0];
       if (!masterLink && allLinks.length > 1) {
-        await base44.entities.ActionLog.create({
-          action_type: "REGISTRATION_CONFIG_ERROR",
-          entity_type: "MasterLink",
-          action_payload: JSON.stringify({ reason: "multiple_active_no_default_public", email: emailLower }),
-        }).catch(() => {});
         setError("Регистрация временно недоступна: не настроена публичная программа. Обратитесь к администратору.");
         setLoading(false);
         return;
       }
 
+      // Гарантируем уникальность secret_code
+      let secretCode;
+      let attempts = 0;
+      while (attempts < 5) {
+        secretCode = genSecretCode();
+        const conflict = await base44.entities.ReferralProfile.filter({ secret_code: secretCode });
+        if (conflict.length === 0) break;
+        attempts++;
+      }
+
       const referralCode = genRefCode();
-      const secretCode = genSecretCode();
       const maskedCode = maskCode(secretCode);
       const now = new Date().toISOString();
 
-      // Create ReferralProfile — only email is required
       const profile = await base44.entities.ReferralProfile.create({
-        email: emailLower,
+        ...(emailLower ? { email: emailLower } : {}),
+        full_name: name.trim() || undefined,
         role: "referrer",
         status: "active",
         referral_code: referralCode,
@@ -96,74 +103,74 @@ export default function RegisterReferrer() {
         total_candidates_count: 0,
       });
 
-      // Send welcome email
-      await base44.integrations.Core.SendEmail({
-        to: emailLower,
-        subject: "Добро пожаловать в МилитариПартнер! Ваш секретный код",
-        body: `<h2>Вы успешно зарегистрированы!</h2>
-<p>Для входа в личный кабинет используйте:</p>
-<p><strong>Email:</strong> ${emailLower}</p>
-<p><strong>Секретный код:</strong></p>
+      // Отправка на email — только дополнительно, если email указан
+      if (emailLower) {
+        await base44.integrations.Core.SendEmail({
+          to: emailLower,
+          subject: "Добро пожаловать в МилитариПартнер! Ваш секретный код",
+          body: `<h2>Вы успешно зарегистрированы!</h2>
+<p><strong>Ваш секретный код для входа:</strong></p>
 <p style="font-size:20px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px;letter-spacing:2px">${secretCode}</p>
-<p>⚠️ Сохраните этот код в надёжном месте — он используется вместо пароля.</p>
+<p>⚠️ Сохраните этот код — он используется вместо пароля. Email при входе не нужен.</p>
 <p><a href="${window.location.origin}/secret-login" style="background:#2d6a4f;color:white;padding:10px 20px;border-radius:6px;text-decoration:none">Войти в кабинет</a></p>`,
-      }).catch(() => {}); // Don't fail registration if email fails
+        }).catch(() => {});
+      }
 
-      // Action log
       await base44.entities.ActionLog.create({
         actor_role: "referrer",
-        action_type: "REFERRER_REGISTERED",
+        action_type: "PROFILE_CREATED_FROM_PUBLIC_REGISTRATION",
         entity_type: "ReferralProfile",
         entity_id: profile.id,
-        action_payload: JSON.stringify({ email: emailLower, master_link_id: masterLink?.id }),
+        action_payload: JSON.stringify({ email: emailLower || null, master_link_id: masterLink?.id }),
       }).catch(() => {});
 
-      // Store session
+      // Сразу авторизуем
       setStoredProfile({ ...profile, secret_code: secretCode, masked_secret_code: maskedCode });
 
-      // Show secret code modal
-      setCreatedProfile({ ...profile, secret_code: secretCode, masked_secret_code: maskedCode });
+      // Показываем модал с кодом
+      setCreatedProfile({ ...profile, secret_code: secretCode, masked_secret_code: maskedCode, email: emailLower });
       setShowModal(true);
 
     } catch (err) {
-      console.error("Registration error:", err);
       const msg = err?.response?.data?.message || err?.message || "";
       if (msg.toLowerCase().includes("unique") || msg.toLowerCase().includes("duplicate")) {
         setError("Пользователь с таким email уже зарегистрирован.");
       } else {
-        setError("Ошибка при создании профиля: " + (msg || "попробуйте ещё раз"));
+        setError("Ошибка при создании профиля. Попробуйте ещё раз.");
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleShowCode = () => {
-    setShowCode(true);
-    setTimeout(() => setShowCode(false), 3000);
-  };
-
   const handleCopy = async () => {
     if (createdProfile?.secret_code) {
       await navigator.clipboard.writeText(createdProfile.secret_code);
-      toast({ title: "Код скопирован в буфер обмена!" });
+      toast({ title: "Код скопирован!" });
     }
   };
 
+  const handleShowCode = () => {
+    setShowCode(true);
+    setTimeout(() => setShowCode(false), 5000);
+  };
+
   const handleResend = async () => {
-    if (!createdProfile) return;
+    if (!createdProfile?.email) return;
     setResending(true);
     try {
       await base44.integrations.Core.SendEmail({
         to: createdProfile.email,
         subject: "Ваш секретный код — МилитариПартнер",
-        body: `<h2>Секретный код для входа</h2><p style="font-size:20px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${createdProfile.secret_code}</p><p><a href="${window.location.origin}/secret-login">Войти в кабинет</a></p>`,
+        body: `<h2>Ваш секретный код</h2><p style="font-size:20px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${createdProfile.secret_code}</p><p><a href="${window.location.origin}/secret-login">Войти в кабинет</a></p>`,
       });
-      await base44.entities.ReferralProfile.update(createdProfile.id, { secret_code_last_sent_at: new Date().toISOString() });
-      await base44.entities.ActionLog.create({ actor_role: "referrer", action_type: "SECRET_CODE_RESENT", entity_type: "ReferralProfile", entity_id: createdProfile.id }).catch(() => {});
-      toast({ title: "Код повторно отправлен на email!" });
+      await base44.entities.ActionLog.create({
+        actor_role: "referrer", action_type: "SECRET_CODE_RESENT",
+        entity_type: "ReferralProfile", entity_id: createdProfile.id,
+      }).catch(() => {});
+      toast({ title: "Код отправлен на email!" });
     } catch {
-      toast({ title: "Ошибка отправки", variant: "destructive" });
+      toast({ title: "Ошибка отправки email", variant: "destructive" });
     } finally {
       setResending(false);
     }
@@ -194,20 +201,29 @@ export default function RegisterReferrer() {
         <div className="w-full max-w-md">
           <h1 className="font-heading text-3xl font-bold text-center mb-2">Получить реферальную ссылку</h1>
           <p className="text-muted-foreground text-center mb-8">
-            Укажите только email — ссылка будет готова сразу, без пароля
+            Аккаунт создаётся мгновенно — email не обязателен
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6">
             <div>
-              <Label>Email *</Label>
+              <Label>Имя (необязательно)</Label>
+              <Input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Ваше имя"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label>Email (необязательно)</Label>
               <Input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                required
                 placeholder="ваш@email.com"
-                autoFocus
               />
+              <p className="text-xs text-muted-foreground mt-1">Если укажете — пришлём код на email дополнительно</p>
             </div>
             <div className="flex items-start gap-2">
               <Checkbox checked={consent} onCheckedChange={setConsent} id="consent" />
@@ -241,7 +257,7 @@ export default function RegisterReferrer() {
       {showModal && createdProfile && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
-            <div className="text-center mb-2">
+            <div className="text-center mb-4">
               <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
                 <Key className="w-6 h-6 text-primary" />
               </div>
@@ -251,14 +267,21 @@ export default function RegisterReferrer() {
               </p>
             </div>
 
-            <div className="bg-muted rounded-xl p-4 font-mono text-center text-base mb-2 min-h-[56px] flex items-center justify-center break-all mt-4">
+            <div className="bg-muted rounded-xl p-4 font-mono text-center text-base mb-2 min-h-[56px] flex items-center justify-center break-all">
               {showCode ? createdProfile.secret_code : createdProfile.masked_secret_code}
             </div>
-            <p className="text-xs text-muted-foreground text-center mb-5">
-              Код также отправлен на <strong>{createdProfile.email}</strong>
-            </p>
 
-            <div className="grid grid-cols-3 gap-2 mb-5">
+            {createdProfile.email ? (
+              <p className="text-xs text-muted-foreground text-center mb-4">
+                Код также отправлен на <strong>{createdProfile.email}</strong>
+              </p>
+            ) : (
+              <p className="text-xs text-amber-600 text-center mb-4 bg-amber-50 rounded-lg p-2">
+                ⚠️ Email не указан — сохраните код прямо сейчас, потом его покажет только администратор
+              </p>
+            )}
+
+            <div className={`grid gap-2 mb-5 ${createdProfile.email ? "grid-cols-3" : "grid-cols-2"}`}>
               <Button variant="outline" size="sm" onClick={handleShowCode} className="h-10 text-xs">
                 {showCode ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
                 {showCode ? "Скрыть" : "Показать"}
@@ -266,12 +289,14 @@ export default function RegisterReferrer() {
               <Button variant="outline" size="sm" onClick={handleCopy} className="h-10 text-xs">
                 <Copy className="w-3.5 h-3.5 mr-1" /> Копировать
               </Button>
-              <Button variant="outline" size="sm" onClick={handleResend} disabled={resending} className="h-10 text-xs">
-                {resending
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : <><Mail className="w-3.5 h-3.5 mr-1" />На email</>
-                }
-              </Button>
+              {createdProfile.email && (
+                <Button variant="outline" size="sm" onClick={handleResend} disabled={resending} className="h-10 text-xs">
+                  {resending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <><Mail className="w-3.5 h-3.5 mr-1" />На email</>
+                  }
+                </Button>
+              )}
             </div>
 
             <Button onClick={handleDismiss} className="w-full bg-primary font-bold h-12 rounded-xl">

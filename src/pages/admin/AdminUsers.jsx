@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, Search, Power, Plus, RefreshCw, Mail, ShieldCheck, Edit2, X } from "lucide-react";
+import { Loader2, Search, Power, Plus, RefreshCw, Mail, ShieldCheck, Eye, EyeOff, Copy, X } from "lucide-react";
 import moment from "moment";
 import { getStoredRole, getStoredProfileId } from "@/lib/profileSession";
 
@@ -33,31 +33,34 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
   const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "" });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [createdCode, setCreatedCode] = useState(null); // показываем код сразу после создания
+  const [showCode, setShowCode] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-
-    // Only super_admin can create staff
-    if (currentRole !== "super_admin") {
-      setError("Недостаточно прав для создания staff-аккаунтов.");
-      return;
-    }
-
+    if (currentRole !== "super_admin") { setError("Недостаточно прав."); return; }
     setLoading(true);
     try {
       const emailLower = form.email.trim().toLowerCase();
-      const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
-      if (existing.length > 0) {
-        setError("Пользователь с таким email уже существует.");
-        return;
+      if (emailLower) {
+        const existing = await base44.entities.ReferralProfile.filter({ email: emailLower });
+        if (existing.length > 0) { setError("Пользователь с таким email уже существует."); return; }
       }
 
-      const secretCode = genSecretCode();
+      // Гарантируем уникальность кода
+      let secretCode;
+      let attempts = 0;
+      while (attempts < 5) {
+        secretCode = genSecretCode();
+        const conflict = await base44.entities.ReferralProfile.filter({ secret_code: secretCode });
+        if (conflict.length === 0) break;
+        attempts++;
+      }
       const now = new Date().toISOString();
 
       const profile = await base44.entities.ReferralProfile.create({
-        email: emailLower,
+        ...(emailLower ? { email: emailLower } : {}),
         full_name: form.full_name || (form.role === "admin" ? "Администратор" : "Модератор"),
         role: form.role,
         status: "active",
@@ -68,34 +71,74 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
         master_link_id: form.master_link_id || undefined,
       });
 
-      await base44.integrations.Core.SendEmail({
-        to: emailLower,
-        subject: `Ваш аккаунт ${form.role === "admin" ? "администратора" : "модератора"} — МилитариПартнер`,
-        body: `<h2>Аккаунт ${form.role === "admin" ? "администратора" : "модератора"} создан</h2>
-               <p><strong>Email:</strong> ${emailLower}</p>
-               <p><strong>Секретный код для входа:</strong></p>
-               <p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p>
-               <p><a href="${window.location.origin}/secret-login">Войти в систему →</a></p>`,
-      }).catch(() => {});
+      // Если email указан — слать на email как доп. канал
+      if (emailLower) {
+        await base44.integrations.Core.SendEmail({
+          to: emailLower,
+          subject: `Ваш аккаунт — МилитариПартнер`,
+          body: `<h2>Аккаунт создан</h2><p><strong>Секретный код для входа:</strong></p>
+<p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p>
+<p>Используйте код для входа — email при входе не нужен.</p>
+<p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
+        }).catch(() => {});
+      }
 
       await base44.entities.ActionLog.create({
-        actor_user_id: getStoredProfileId(),
-        actor_role: currentRole,
+        actor_user_id: getStoredProfileId(), actor_role: currentRole,
         action_type: "STAFF_USER_CREATED",
-        entity_type: "ReferralProfile",
-        entity_id: profile.id,
-        action_payload: JSON.stringify({ email: emailLower, role: form.role }),
+        entity_type: "ReferralProfile", entity_id: profile.id,
+        action_payload: JSON.stringify({ email: emailLower || null, role: form.role }),
       }).catch(() => {});
 
-      toast({ title: `✓ ${form.role === "admin" ? "Администратор" : "Модератор"} создан`, description: `Код отправлен на ${emailLower}` });
+      // Показываем код администратору сразу
+      setCreatedCode({ secretCode, profile, emailLower });
       onCreated();
-      onClose();
     } catch (err) {
       setError("Ошибка создания: " + (err?.message || "попробуйте ещё раз"));
     } finally {
       setLoading(false);
     }
   };
+
+  const handleCopyCode = async () => {
+    if (createdCode?.secretCode) {
+      await navigator.clipboard.writeText(createdCode.secretCode);
+      toast({ title: "Код скопирован!" });
+      await base44.entities.ActionLog.create({
+        actor_user_id: getStoredProfileId(), actor_role: currentRole,
+        action_type: "SECRET_CODE_COPIED",
+        entity_type: "ReferralProfile", entity_id: createdCode.profile.id,
+      }).catch(() => {});
+    }
+  };
+
+  // После создания — показываем результат с кодом
+  if (createdCode) return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-xl p-6">
+        <div className="text-center mb-4">
+          <div className="text-green-600 font-heading font-bold text-lg mb-1">✓ Аккаунт создан</div>
+          <p className="text-sm text-muted-foreground">Передайте секретный код пользователю через ваш канал связи</p>
+        </div>
+        <div className="bg-muted rounded-xl p-4 font-mono text-center text-sm mb-3 break-all min-h-[52px] flex items-center justify-center">
+          {showCode ? createdCode.secretCode : maskCode(createdCode.secretCode)}
+        </div>
+        {createdCode.emailLower && (
+          <p className="text-xs text-muted-foreground text-center mb-3">Код также отправлен на {createdCode.emailLower}</p>
+        )}
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          <Button variant="outline" size="sm" onClick={() => setShowCode(v => !v)} className="h-10 text-xs">
+            {showCode ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+            {showCode ? "Скрыть" : "Показать"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleCopyCode} className="h-10 text-xs">
+            <Copy className="w-3.5 h-3.5 mr-1" /> Копировать
+          </Button>
+        </div>
+        <Button onClick={onClose} className="w-full bg-primary font-bold">Закрыть</Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -108,31 +151,24 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <Label>Email *</Label>
-            <Input type="email" required value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="staff@example.com" />
+            <Label>Имя</Label>
+            <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Полное имя" autoFocus />
           </div>
           <div>
-            <Label>Имя</Label>
-            <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Полное имя" />
+            <Label>Email (необязательно)</Label>
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="staff@example.com" />
+            <p className="text-xs text-muted-foreground mt-1">Если указан — код будет отправлен на email дополнительно</p>
           </div>
           <div>
             <Label>Роль *</Label>
-            <select
-              className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm"
-              value={form.role}
-              onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-            >
+            <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
               {CREATABLE_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
           {masterLinks.length > 0 && (
             <div>
               <Label>Мастер-ссылка (необязательно)</Label>
-              <select
-                className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm"
-                value={form.master_link_id}
-                onChange={e => setForm(f => ({ ...f, master_link_id: e.target.value }))}
-              >
+              <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.master_link_id} onChange={e => setForm(f => ({ ...f, master_link_id: e.target.value }))}>
                 <option value="">— не назначена —</option>
                 {masterLinks.map(ml => <option key={ml.id} value={ml.id}>{ml.title}</option>)}
               </select>
@@ -165,6 +201,7 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
+  const [visibleCodes, setVisibleCodes] = useState({}); // id -> true/false показывать код
 
   const load = async () => {
     const [data, mls] = await Promise.all([
@@ -210,9 +247,33 @@ export default function AdminUsers() {
     load();
   };
 
-  // Resend secret code
+  const toggleCodeVisibility = async (u) => {
+    const next = !visibleCodes[u.id];
+    setVisibleCodes(prev => ({ ...prev, [u.id]: next }));
+    if (next) {
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "SECRET_CODE_VIEWED",
+        entity_type: "ReferralProfile", entity_id: u.id,
+      }).catch(() => {});
+    }
+  };
+
+  const copyCode = async (u) => {
+    if (u.secret_code) {
+      await navigator.clipboard.writeText(u.secret_code);
+      toast({ title: "Код скопирован!" });
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "SECRET_CODE_COPIED",
+        entity_type: "ReferralProfile", entity_id: u.id,
+      }).catch(() => {});
+    }
+  };
+
+  // Resend secret code — только если email указан
   const resendCode = async (u) => {
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin || !u.email) return;
     setLoaderFor(u.id, "resend");
     const now = new Date().toISOString();
     await base44.entities.ReferralProfile.update(u.id, { secret_code_last_sent_at: now });
@@ -299,7 +360,7 @@ export default function AdminUsers() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
                 <tr>
-                  {["Имя", "Email", "Роль", "Статус", "Последний вход", "Код отправлен", ""].map(h => (
+                  {["Имя", "Email", "Роль", "Статус", "Secret Code", "Последний вход", ""].map(h => (
                     <th key={h} className="px-4 py-3 text-left font-medium text-muted-foreground whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -327,41 +388,37 @@ export default function AdminUsers() {
                           {u.status === "active" ? "Активен" : u.status === "blocked" ? "Заблокирован" : u.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {u.last_login_at ? moment(u.last_login_at).fromNow() : "Не входил"}
+                      <td className="px-4 py-3">
+                        {isSuperAdmin && (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-xs text-muted-foreground max-w-[120px] truncate">
+                              {visibleCodes[u.id] ? u.secret_code : maskCode(u.secret_code || "")}
+                            </span>
+                            <button onClick={() => toggleCodeVisibility(u)} title={visibleCodes[u.id] ? "Скрыть" : "Показать"} className="p-1 rounded hover:bg-muted">
+                              {visibleCodes[u.id] ? <EyeOff className="w-3.5 h-3.5 text-muted-foreground" /> : <Eye className="w-3.5 h-3.5 text-muted-foreground" />}
+                            </button>
+                            <button onClick={() => copyCode(u)} title="Копировать" className="p-1 rounded hover:bg-muted">
+                              <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {u.secret_code_last_sent_at ? moment(u.secret_code_last_sent_at).fromNow() : "—"}
+                        {u.last_login_at ? moment(u.last_login_at).fromNow() : "Не входил"}
                       </td>
                       <td className="px-4 py-3">
                         {isSuperAdmin && (
                           <div className="flex items-center gap-1">
-                            {/* Resend code */}
-                            <button
-                              onClick={() => resendCode(u)}
-                              disabled={!!actionLoading[u.id]}
-                              title="Отправить код повторно"
-                              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            >
-                              {actionLoading[u.id] === "resend" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
-                            </button>
-                            {/* Regen code */}
-                            <button
-                              onClick={() => regenCode(u)}
-                              disabled={!!actionLoading[u.id]}
-                              title="Новый код"
-                              className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                            >
+                            {u.email && (
+                              <button onClick={() => resendCode(u)} disabled={!!actionLoading[u.id]} title="Отправить код на email" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                                {actionLoading[u.id] === "resend" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
+                            <button onClick={() => regenCode(u)} disabled={!!actionLoading[u.id]} title="Новый код" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                               {actionLoading[u.id] === "regen" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                             </button>
-                            {/* Toggle status — защита от удаления последнего super_admin */}
                             {!isLastSuperAdmin && (
-                              <button
-                                onClick={() => toggleStatus(u)}
-                                disabled={!!actionLoading[u.id]}
-                                title={u.status === "active" ? "Заблокировать" : "Активировать"}
-                                className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                              >
+                              <button onClick={() => toggleStatus(u)} disabled={!!actionLoading[u.id]} title={u.status === "active" ? "Заблокировать" : "Активировать"} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                                 {actionLoading[u.id] === "status" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
                               </button>
                             )}

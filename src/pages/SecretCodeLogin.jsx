@@ -4,12 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
-import { Shield, Loader2, Key, ShieldCheck } from "lucide-react";
+import { Shield, Loader2, Key } from "lucide-react";
 import { setStoredProfile, roleHomePath } from "@/lib/profileSession";
 
 export default function SecretCodeLogin() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: "", secret_code: "" });
+  const [secretCode, setSecretCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -17,33 +17,32 @@ export default function SecretCodeLogin() {
     e.preventDefault();
     setError("");
     setLoading(true);
+    const code = secretCode.trim();
     try {
-      const emailLower = form.email.trim().toLowerCase();
-      const profiles = await base44.entities.ReferralProfile.filter({ email: emailLower });
+      // Ищем профиль напрямую по secret_code
+      const profiles = await base44.entities.ReferralProfile.filter({ secret_code: code });
 
       if (profiles.length === 0) {
-        setError("Аккаунт с таким email не найден. Проверьте данные или зарегистрируйтесь.");
-        return;
-      }
-
-      const profile = profiles.find(p => p.secret_code === form.secret_code.trim());
-
-      if (!profile) {
-        setError("Неверный секретный код. Проверьте код — он был отправлен на email при регистрации.");
+        setError("Секретный код не найден. Проверьте код и попробуйте ещё раз.");
         await base44.entities.ActionLog.create({
           actor_role: "unknown",
           action_type: "LOGIN_FAILED_WRONG_CODE",
           entity_type: "ReferralProfile",
-          action_payload: JSON.stringify({ email: emailLower }),
+          action_payload: JSON.stringify({ code_prefix: code.slice(0, 4) + "…" }),
         }).catch(() => {});
         return;
       }
+
+      const profile = profiles[0];
 
       if (profile.status === "blocked") {
         setError("Ваш аккаунт заблокирован. Обратитесь к администратору.");
         return;
       }
-
+      if (profile.status === "inactive") {
+        setError("Ваш аккаунт неактивен. Обратитесь к администратору.");
+        return;
+      }
       if (!profile.role) {
         setError("Роль пользователя не определена. Обратитесь к администратору.");
         return;
@@ -57,7 +56,7 @@ export default function SecretCodeLogin() {
         action_type: "LOGIN_SUCCESS",
         entity_type: "ReferralProfile",
         entity_id: profile.id,
-        action_payload: JSON.stringify({ email: emailLower, role: profile.role }),
+        action_payload: JSON.stringify({ role: profile.role }),
       }).catch(() => {});
 
       setStoredProfile({ ...profile, last_login_at: now });
@@ -90,34 +89,24 @@ export default function SecretCodeLogin() {
           </div>
           <h1 className="font-heading text-3xl font-bold text-center mb-2">Вход в систему</h1>
           <p className="text-muted-foreground text-center mb-8">
-            Email + секретный код — пароль не нужен
+            Введите секретный код — email и пароль не нужны
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5 bg-card border border-border rounded-2xl p-6">
             <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                required
-                placeholder="ваш@email.com"
-                autoComplete="email"
-              />
-            </div>
-            <div>
               <Label>Секретный код</Label>
               <Input
                 type="text"
-                value={form.secret_code}
-                onChange={e => setForm(f => ({ ...f, secret_code: e.target.value }))}
+                value={secretCode}
+                onChange={e => setSecretCode(e.target.value)}
                 required
-                placeholder="Код из вашего email"
-                className="font-mono"
+                placeholder="Введите ваш секретный код"
+                className="font-mono text-base"
                 autoComplete="off"
+                autoFocus
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Код отправляется на email при регистрации
+                Код выдаётся при регистрации или через администратора
               </p>
             </div>
 
@@ -136,32 +125,13 @@ export default function SecretCodeLogin() {
             <p className="text-sm text-muted-foreground">
               Нет аккаунта?{" "}
               <Link to="/register-referrer" className="text-primary font-medium hover:underline">
-                Получить реферальную ссылку
+                Зарегистрироваться как реферал
               </Link>
             </p>
             <p className="text-sm text-muted-foreground">
               Потеряли код?{" "}
-              <Link to="/resend-code" className="text-primary font-medium hover:underline">
-                Получить код на email
-              </Link>
+              <span className="text-muted-foreground">Обратитесь к своему администратору</span>
             </p>
-          </div>
-
-          {/* Блок для администраторов / владельца сайта */}
-          <div className="mt-8 bg-muted/50 border border-border rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <ShieldCheck className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">Вход для администратора</span>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              Если вы владелец сайта и впервые настраиваете систему — сначала создайте аккаунт администратора.
-              После этого используйте email и секретный код для входа в <strong>/admin</strong>.
-            </p>
-            <Link to="/admin-bootstrap">
-              <Button variant="outline" size="sm" className="w-full text-xs">
-                Создать аккаунт администратора
-              </Button>
-            </Link>
           </div>
         </div>
       </div>
