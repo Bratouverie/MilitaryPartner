@@ -90,7 +90,7 @@ export default function ReferralDashboard() {
       const rewardText = getRewardAmount();
       navigator.share({
         title: "МилитариПартнер",
-        text: `Присоединяйся к программе! За каждого кандидата платят ${rewardText}. ${referralLink}`,
+        text: `Присоединяйся к программе! За каждого кандидата платят ${rewardText}.`,
         url: referralLink,
       });
     }
