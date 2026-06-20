@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Search, Power, Plus, RefreshCw, Mail, ShieldCheck, Eye, EyeOff, Copy, X } from "lucide-react";
 import moment from "moment";
 import { getStoredRole, getStoredProfileId } from "@/lib/profileSession";
+import { createChildProgram } from "@/lib/programUtils";
 
 const genSecretCode = () => {
   const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -29,14 +30,28 @@ const CREATABLE_ROLES = [
   { value: "referrer_l1", label: "Реферал 1-го уровня (для конкретной программы)" },
 ];
 
-function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, programs }) {
-  const { toast } = useToast();
-  const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "", program_id: "" });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [createdCode, setCreatedCode] = useState(null); // показываем код сразу после создания
-  const [showCode, setShowCode] = useState(false);
-  const isL1Referrer = form.role === "referrer_l1";
+function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole }) {
+   const { toast } = useToast();
+   const [form, setForm] = useState({ email: "", full_name: "", role: "moderator", master_link_id: "", program_id: "" });
+   const [loading, setLoading] = useState(false);
+   const [error, setError] = useState("");
+   const [createdCode, setCreatedCode] = useState(null); // показываем код сразу после создания
+   const [showCode, setShowCode] = useState(false);
+   const [freshPrograms, setFreshPrograms] = useState([]);
+   const [programsLoading, setProgramsLoading] = useState(false);
+   const isL1Referrer = form.role === "referrer_l1";
+
+   // Загружаем свежие программы при открытии модала
+   useEffect(() => {
+     setProgramsLoading(true);
+     base44.entities.ReferralProgram.filter({ is_root: true, is_archived: false })
+       .then(progs => {
+         const active = progs.filter(p => p.program_status === "active");
+         setFreshPrograms(active);
+       })
+       .catch(() => setFreshPrograms([]))
+       .finally(() => setProgramsLoading(false));
+   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -78,16 +93,26 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, progra
         level: isL1Referrer ? "L0_novice" : undefined,
       });
 
-      // Если это L1 реферал — создаём ProgramMembership
+      // Если это L1 реферал — создаём собственную ReferralProgram
+      let childProgram = null;
       if (isL1Referrer && form.program_id) {
-        await base44.entities.ProgramMembership.create({
-          user_id: profile.id,
-          program_id: form.program_id,
-          membership_role: "owner",
-          membership_status: "active",
-          source_join_type: "direct_assignment",
-          joined_at: now,
-        }).catch(() => {});
+        const parentProgram = freshPrograms.find(p => p.id === form.program_id);
+        if (!parentProgram) throw new Error("Родительская программа не найдена");
+
+        const { program: prog, error: progError } = await createChildProgram({
+          parentProgram,
+          title: form.full_name || "Реферал",
+          childQuota: parentProgram.reward_quota,
+          ownerUserId: profile.id,
+          actorUserId: getStoredProfileId(),
+        });
+
+        if (progError || !prog) {
+          // Откат: помечаем профиль как неактивный
+          await base44.entities.ReferralProfile.update(profile.id, { status: "inactive" }).catch(() => {});
+          throw new Error(`Ошибка создания программы реферала: ${progError}`);
+        }
+        childProgram = prog;
       }
 
       // Email обязателен — всегда отправляем
@@ -106,7 +131,12 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, progra
         actor_user_id: getStoredProfileId(), actor_role: currentRole,
         action_type: isL1Referrer ? "L1_REFERRER_CREATED" : "STAFF_USER_CREATED",
         entity_type: "ReferralProfile", entity_id: profile.id,
-        action_payload: JSON.stringify({ email: emailLower || null, role: form.role, program_id: form.program_id }),
+        action_payload: JSON.stringify({ 
+          email: emailLower || null, 
+          role: form.role, 
+          program_id: form.program_id,
+          child_program_id: childProgram?.id || null,
+        }),
       }).catch(() => {});
 
       // Показываем код администратору сразу
@@ -184,13 +214,19 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, progra
               {CREATABLE_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
             </select>
           </div>
-          {isL1Referrer && programs.length > 0 && (
+          {isL1Referrer && (
             <div>
               <Label>Программа для назначения *</Label>
-              <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.program_id} onChange={e => setForm(f => ({ ...f, program_id: e.target.value }))}>
-                <option value="">Выберите программу…</option>
-                {programs.filter(p => p.is_root).map(p => <option key={p.id} value={p.id}>{p.title} ({(p.reward_quota || 0).toLocaleString()} ₽)</option>)}
-              </select>
+              {programsLoading ? (
+                <div className="h-10 flex items-center text-xs text-muted-foreground">Загрузка программ…</div>
+              ) : freshPrograms.length > 0 ? (
+                <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.program_id} onChange={e => setForm(f => ({ ...f, program_id: e.target.value }))}>
+                  <option value="">Выберите программу…</option>
+                  {freshPrograms.map(p => <option key={p.id} value={p.id}>{p.internal_display_title || p.title} ({(p.reward_quota || 0).toLocaleString()} ₽)</option>)}
+                </select>
+              ) : (
+                <div className="h-10 flex items-center text-xs text-destructive">Нет доступных корневых программ</div>
+              )}
             </div>
           )}
           {!isL1Referrer && masterLinks.length > 0 && (
@@ -520,14 +556,13 @@ export default function AdminUsers() {
       )}
 
       {showCreate && (
-        <CreateStaffModal
-          onClose={() => setShowCreate(false)}
-          onCreated={load}
-          masterLinks={masterLinks}
-          programs={programs}
-          currentRole={currentRole}
-        />
-      )}
+         <CreateStaffModal
+           onClose={() => setShowCreate(false)}
+           onCreated={load}
+           masterLinks={masterLinks}
+           currentRole={currentRole}
+         />
+       )}
     </div>
   );
 }
