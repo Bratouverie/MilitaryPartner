@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Plus, Power, X, Copy, ChevronRight, Users, GitBranch, Shield, ChevronDown, ChevronUp, Edit2, Info } from "lucide-react";
 import { genUniqueLinkCode, genUniqueCandidateCode, validateQuota, MIN_QUOTA, QUOTA_STEP, canHaveChildren, MAX_DIRECT_CHILDREN } from "@/lib/programUtils";
 import { getStoredProfile } from "@/lib/profileSession";
+import { guessRegionCode, recommendCategory, CATEGORY_LABELS } from "@/lib/regionHelpers";
 
 const DENSITY_COLOR = (count) => {
   if (count === 0) return "bg-gray-100 text-gray-500";
@@ -28,8 +29,15 @@ export default function AdminMasterLinks() {
   const [moderators, setModerators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", max_reward: "", moderator_id: "", region_name: "", region_code: "", program_category: "" });
+    const [saving, setSaving] = useState(false);
+    const [form, setForm] = useState({ 
+      title: "", 
+      max_reward: "", 
+      moderator_id: "", 
+      region_name: "", 
+      region_code: "", 
+      program_category: recommendCategory("") // рекомендация по умолчанию
+    });
   const [formError, setFormError] = useState("");
   const [expandedRoots, setExpandedRoots] = useState({});
   const [changingModerator, setChangingModerator] = useState(null);
@@ -374,16 +382,33 @@ export default function AdminMasterLinks() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Регион</Label>
-                  <Input value={form.region_name} onChange={e => setForm(f => ({ ...f, region_name: e.target.value }))} placeholder="Москва" className="mt-1" />
+                  <Input value={form.region_name} onChange={e => {
+                    const name = e.target.value;
+                    setForm(f => ({
+                      ...f,
+                      region_name: name,
+                      region_code: guessRegionCode(name) // автоопределяем код
+                    }));
+                  }} placeholder="Москва" className="mt-1" />
                 </div>
                 <div>
                   <Label>Код региона</Label>
                   <Input value={form.region_code} onChange={e => setForm(f => ({ ...f, region_code: e.target.value.toUpperCase() }))} placeholder="MSK" className="mt-1" maxLength={6} />
+                  <p className="text-xs text-muted-foreground mt-1">Определяется автоматически</p>
                 </div>
               </div>
               <div>
                 <Label>Категория программы</Label>
-                <Input value={form.program_category} onChange={e => setForm(f => ({ ...f, program_category: e.target.value }))} placeholder="контракт_вс" className="mt-1" />
+                <select className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm mt-1"
+                  value={form.program_category} onChange={e => setForm(f => ({ ...f, program_category: e.target.value }))}>
+                  <option value="">— не определена —</option>
+                  {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                    <option key={key} value={key}>{label}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {form.program_category && CATEGORY_LABELS[form.program_category] ? `Выбрано: ${CATEGORY_LABELS[form.program_category]}` : "Помогает сегментировать и анализировать программы"}
+                </p>
               </div>
               <div>
                 <Label>Назначить модератора</Label>
@@ -418,7 +443,7 @@ export default function AdminMasterLinks() {
       )}
 
       <div className="space-y-2">
-        {rootPrograms.filter(p => !p.is_archived || showArchived).map(prog => <TreeNode key={prog.id} prog={prog} indent={0} />)}
+        {rootPrograms.filter(p => showArchived ? true : !p.is_archived).map(prog => <TreeNode key={prog.id} prog={prog} indent={0} />)}
       </div>
 
       {/* Легенда плотности */}

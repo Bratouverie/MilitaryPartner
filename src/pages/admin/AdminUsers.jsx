@@ -63,7 +63,6 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
     if (currentRole !== "super_admin") { setError("Недостаточно прав."); return; }
     // Email обязателен для staff и L1 рефералов
     const emailLower = form.email.trim().toLowerCase();
-    if (!emailLower) { setError("Email обязателен."); return; }
     if ((isL1Referrer || form.role === "moderator") && !form.program_id) { setError("Выберите программу."); return; }
     setLoading(true);
     try {
@@ -201,15 +200,15 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
         });
       }
 
-      // Email обязателен — всегда отправляем
-      {
+      // Отправляем email только если он указан
+      if (emailLower) {
         await base44.integrations.Core.SendEmail({
           to: emailLower,
           subject: `Ваш аккаунт — МилитариПартнер`,
           body: `<h2>Аккаунт создан</h2><p><strong>Секретный код для входа:</strong></p>
-<p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p>
-<p>Используйте код для входа — email при входе не нужен.</p>
-<p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
+      <p style="font-size:18px;font-family:monospace;background:#f4f4f4;padding:12px;border-radius:6px">${secretCode}</p>
+      <p>Используйте код для входа — email при входе не нужен.</p>
+      <p><a href="${window.location.origin}/secret-login">Войти →</a></p>`,
         }).catch(() => {});
       }
 
@@ -290,9 +289,9 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
             <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Полное имя" autoFocus />
           </div>
           <div>
-            <Label>Email *</Label>
-            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="user@example.com" required />
-            <p className="text-xs text-muted-foreground mt-1">Обязателен. Секретный код будет отправлен на этот адрес.</p>
+            <Label>Email</Label>
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="user@example.com (опционально)" />
+            <p className="text-xs text-muted-foreground mt-1">Если указан, секретный код будет отправлен. Если нет — код появится в интерфейсе.</p>
           </div>
           <div>
             <Label>Роль *</Label>
@@ -305,16 +304,16 @@ function CreateStaffModal({ onClose, onCreated, masterLinks, currentRole, isOpen
               <Label>{isL1Referrer ? "Программа для владения *" : "Программа для курирования *"}</Label>
               {programsLoading ? (
                 <div className="h-10 flex items-center text-xs text-muted-foreground">Загрузка программ…</div>
-              ) : freshPrograms.length > 0 ? (
+              ) : freshPrograms.filter(p => p.program_status === "active" && !p.is_archived).length > 0 ? (
                 <select className="w-full h-10 px-3 border border-input rounded-md bg-background text-sm" value={form.program_id} onChange={e => setForm(f => ({ ...f, program_id: e.target.value }))}>
                   <option value="">Выберите программу…</option>
-                  {freshPrograms.map(p => <option key={p.id} value={p.id}>{p.internal_display_title || p.title} ({(p.reward_quota || 0).toLocaleString()} ₽)</option>)}
+                  {freshPrograms.filter(p => p.program_status === "active" && !p.is_archived).map(p => <option key={p.id} value={p.id}>{p.internal_display_title || p.title} ({(p.reward_quota || 0).toLocaleString()} ₽)</option>)}
                 </select>
               ) : (
-                <div className="h-10 flex items-center text-xs text-destructive">Нет доступных корневых программ</div>
+                <div className="h-10 flex items-center text-xs text-destructive">Нет доступных активных программ</div>
               )}
             </div>
-          )}
+            )}
           {error && <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-3 text-sm text-destructive">{error}</div>}
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" onClick={onClose} className="flex-1">Отмена</Button>
@@ -371,6 +370,37 @@ export default function AdminUsers() {
   }, [search, roleFilter, users]);
 
   const setLoaderFor = (id, val) => setActionLoading(prev => ({ ...prev, [id]: val }));
+
+  // Удаление пользователей (админ удаляет кандидатов/модераторов, суперадмин удаляет всех)
+  const canDeleteUser = (u) => {
+    if (u.id === currentId) return false; // себя удалять нельзя
+    if (u.role === "super_admin") return currentRole === "super_admin"; // super_admin только суперадмин
+    if (u.role === "admin") return currentRole === "super_admin"; // admin только суперадмин
+    return true; // кандидатов и модераторов может админ и суперадмин
+  };
+
+  const deleteUser = async (u) => {
+    const msg = currentRole === "super_admin" && u.role === "admin" ? `Удалить администратора ${u.full_name || u.email}?` : `Деактивировать ${u.full_name || u.email}?`;
+    if (!confirm(msg)) return;
+
+    setLoaderFor(u.id, "delete");
+    try {
+      // Soft delete: помечаем как inactive/blocked
+      await base44.entities.ReferralProfile.update(u.id, { status: "blocked" });
+      await base44.entities.ActionLog.create({
+        actor_user_id: currentId, actor_role: currentRole,
+        action_type: "USER_DELETED",
+        entity_type: "ReferralProfile", entity_id: u.id,
+        action_payload: JSON.stringify({ role: u.role, email: u.email }),
+      }).catch(() => {});
+      toast({ title: "Пользователь удален" });
+      load();
+    } catch (err) {
+      toast({ title: "Ошибка удаления", variant: "destructive" });
+    } finally {
+      setLoaderFor(u.id, null);
+    }
+  };
 
   // Toggle active/inactive — защита от блокировки последнего super_admin
   const toggleStatus = async (u) => {
@@ -559,19 +589,26 @@ export default function AdminUsers() {
                         {u.last_login_at ? moment(u.last_login_at).fromNow() : "Не входил"}
                       </td>
                       <td className="px-4 py-3">
-                        {isSuperAdmin && (
+                        {(isSuperAdmin || currentRole === "admin") && (
                           <div className="flex items-center gap-1">
-                            {u.email && (
+                            {isSuperAdmin && u.email && (
                               <button onClick={() => resendCode(u)} disabled={!!actionLoading[u.id]} title="Отправить код на email" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                                 {actionLoading[u.id] === "resend" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
                               </button>
                             )}
-                            <button onClick={() => regenCode(u)} disabled={!!actionLoading[u.id]} title="Новый код" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
-                              {actionLoading[u.id] === "regen" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                            </button>
-                            {!isLastSuperAdmin && (
+                            {isSuperAdmin && (
+                              <button onClick={() => regenCode(u)} disabled={!!actionLoading[u.id]} title="Новый код" className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                                {actionLoading[u.id] === "regen" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
+                            {!isLastSuperAdmin && (isSuperAdmin || (currentRole === "admin" && u.role !== "admin")) && (
                               <button onClick={() => toggleStatus(u)} disabled={!!actionLoading[u.id]} title={u.status === "active" ? "Заблокировать" : "Активировать"} className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                                 {actionLoading[u.id] === "status" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Power className="w-3.5 h-3.5" />}
+                              </button>
+                            )}
+                            {canDeleteUser(u) && (
+                              <button onClick={() => deleteUser(u)} disabled={!!actionLoading[u.id]} title="Удалить" className="p-1.5 rounded hover:bg-destructive/10 text-destructive hover:text-destructive transition-colors">
+                                {actionLoading[u.id] === "delete" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                               </button>
                             )}
                           </div>
@@ -586,10 +623,10 @@ export default function AdminUsers() {
         </div>
       )}
 
-      {/* Referrers & candidates section */}
+      {/* Referrers section */}
       {(roleFilter === "all" || !staffRoles.includes(roleFilter)) && referrerUsers.length > 0 && (
         <div>
-          <h2 className="font-heading font-bold text-sm uppercase tracking-wide text-muted-foreground mb-3">Рефералы и кандидаты</h2>
+          <h2 className="font-heading font-bold text-sm uppercase tracking-wide text-muted-foreground mb-3">Рефералы</h2>
           <div className="overflow-x-auto rounded-xl border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
