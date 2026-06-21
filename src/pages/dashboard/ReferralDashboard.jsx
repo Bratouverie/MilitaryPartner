@@ -44,7 +44,7 @@ export default function ReferralDashboard() {
     : "";
 
   /**
-   * Загружает активную программу из "Мои программы" (mp_selected_program_id) или fallback на первую валидную root.
+   * Загружает первую активную программу — самый простой подход.
    */
    const loadBaseProgram = useCallback(async () => {
      if (!profile?.id) return;
@@ -54,18 +54,12 @@ export default function ReferralDashboard() {
          owner_user_id: profile.id,
        });
 
-       const isValidBase = (p) =>
-          p.is_archived !== true &&
-          p.program_status === "active" &&
-          (p.depth || 0) === 0 &&
-          p.program_kind !== "child";
+       // Берём первую архивированную программу со статусом active, отсортированную по дате
+       const active = all
+         .filter(p => p.is_archived !== true && p.program_status === "active")
+         .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
 
-        // Fallback: первая валидная root/base по дате создания
-        const resolved = all
-          .filter(isValidBase)
-          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
-
-       setBaseProgram(resolved);
+       setBaseProgram(active[0] || null);
      } catch (e) {
        console.error("[ReferralDashboard] loadBaseProgram error:", e);
        setBaseProgram(null);
