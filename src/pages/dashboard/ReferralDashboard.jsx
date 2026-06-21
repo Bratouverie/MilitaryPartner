@@ -49,58 +49,48 @@ export default function ReferralDashboard() {
    * 3. Fallback на первую валидную root если selected не подходит.
    * 4. Если shareSubprogram принадлежит другой базовой — clearSubprogram.
    */
-  const loadBaseProgram = React.useCallback(async () => {
+  const loadBaseProgram = useCallback(async () => {
     if (!profile?.id) return;
     setBaseProgramLoading(true);
     try {
+      // ВАЖНО: фильтруем только по owner_user_id, без is_archived:false —
+      // поля с undefined/null в БД не матчатся на false и программы теряются.
       const all = await base44.entities.ReferralProgram.filter({
         owner_user_id: profile.id,
-        is_archived: false,
       });
 
+      // Строгая валидация base program — только в JS после загрузки всего списка
       const isValidBase = (p) =>
-        p.is_active &&
-        !p.is_archived &&
+        p.is_active === true &&
+        p.is_archived !== true &&
         p.program_status === "active" &&
         (p.depth || 0) === 0 &&
         p.program_kind !== "child";
 
-      // 1. Попробовать сохранённый selected
+      // 1. Попробовать сохранённый selected из MyPrograms
       const savedId = sessionStorage.getItem("mp_selected_program_id");
       const saved = savedId ? all.find(p => p.id === savedId) : null;
 
       let resolved = null;
       if (saved && isValidBase(saved)) {
+        // Сохранённая программа валидна — используем её
         resolved = saved;
       } else {
-        // 2. Fallback: первая валидная по дате создания
+        // 2. Fallback: первая валидная root по дате создания
         const fallback = all
           .filter(isValidBase)
-          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
+          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
         if (fallback) {
           resolved = fallback;
+          // Синхронизируем sessionStorage чтобы MyPrograms видел тот же выбор
           sessionStorage.setItem("mp_selected_program_id", fallback.id);
         }
       }
 
-      setBaseProgram(resolved || null);
-
-      // Если shareSubprogram принадлежит другой базовой — сбросить (используем ref-snapshot)
-      // Читаем из localStorage напрямую, чтобы не зависеть от stale closure
-      if (resolved) {
-        try {
-          const cachedShareId = localStorage.getItem(`dashboard_share_sub_${profile.id}`);
-          if (cachedShareId) {
-            const shareProgs = await base44.entities.ReferralProgram.filter({ id: cachedShareId });
-            const shareProg = shareProgs[0];
-            if (shareProg && shareProg.parent_program_id !== resolved.id) {
-              clearSubprogram();
-            }
-          }
-        } catch {}
-      }
+      setBaseProgram(resolved);
     } catch (e) {
       console.error("[ReferralDashboard] loadBaseProgram error:", e);
+      setBaseProgram(null);
     } finally {
       setBaseProgramLoading(false);
     }
