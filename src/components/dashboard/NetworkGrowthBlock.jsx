@@ -1,126 +1,43 @@
 /**
  * NetworkGrowthBlock — share-flow блок на главной партнёра.
- *
- * DATA FLOW:
- * - shareSubprogram: текущая dashboard sharable subprogram (null если не выбрана).
- *   Передаётся из ReferralDashboard → useDashboardShareSubprogram.
- * - baseProgram: активная базовая программа (depth=0). Только для передачи в modal.
- *
- * ПРАВИЛА:
- * A. Если shareSubprogram уже выбрана:
- *    - copy → сразу копирует /join/:link_code
- *    - telegram → открывает Telegram с точными данными подпрограммы
- *    - "Изменить размер выплаты" → всегда открывает modal
- *
- * B. Если shareSubprogram не выбрана:
- *    - copy и telegram → открывают SetRewardModal
- *    - после confirm → prepareShareSubprogram (hook) → safePrepareDashboardShareSubprogram
- *    - затем выполняется отложенное действие
- *
- * ЗАПРЕЩЕНО:
- * - автоматически выбирать любую child-программу
- * - вызывать createDefaultInviteSubprogram
- * - вести пользователя в «Все программы» как основной CTA
+ * Упрощённая версия — отправляет ссылку из активной базовой программы напрямую.
  */
-import React, { useState } from "react";
+import React from "react";
 import { Link } from "react-router-dom";
-import { Copy, Send, Network, BadgeCheck, AlertCircle, ChevronRight, Settings2, Zap } from "lucide-react";
+import { Copy, Send, Network, BadgeCheck, AlertCircle, ChevronRight, Settings2 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import SetRewardModal from "@/components/dashboard/SetRewardModal";
 
-export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSubprogramReady, prepareShareSubprogram, preparing }) {
-  const [showModal, setShowModal] = useState(false);
-
-  // Все данные строго от shareSubprogram
-  const rewardAmount = shareSubprogram?.reward_quota || 0;
+export default function NetworkGrowthBlock({ baseProgram }) {
+  // Используем ссылку из базовой программы напрямую
+  const programTitle = baseProgram?.public_program_title || baseProgram?.base_program_title || baseProgram?.title || "Программа";
+  const rewardAmount = baseProgram?.reward_quota || 0;
   const rewardText = rewardAmount > 0 ? `${rewardAmount.toLocaleString()} ₽` : "";
 
-  const programTitle =
-    shareSubprogram?.child_prefix_title ||
-    shareSubprogram?.internal_display_title ||
-    shareSubprogram?.public_program_title ||
-    shareSubprogram?.base_program_title ||
-    shareSubprogram?.title ||
-    "";
-
-  const inviteLink = shareSubprogram?.link_code
-    ? `${window.location.origin}/join/${shareSubprogram.link_code}`
+  const inviteLink = baseProgram?.link_code
+    ? `${window.location.origin}/join/${baseProgram.link_code}`
     : "";
 
-  const candidateLink = shareSubprogram?.candidate_form_code
-    ? `${window.location.origin}/candidate/${shareSubprogram.candidate_form_code}`
+  const candidateLink = baseProgram?.candidate_form_code
+    ? `${window.location.origin}/candidate/${baseProgram.candidate_form_code}`
     : "";
 
-  const telegramText = shareSubprogram
+  const hasLink = !!inviteLink;
+
+  const telegramText = baseProgram
     ? `Присоединяйся по моей ссылке. Вознаграждение за участие — ${rewardText}. Заполни анкету:`
     : "";
 
-  const hasSubprogram = !!(shareSubprogram && inviteLink);
-  const canAct = hasSubprogram || !!baseProgram;
-
-  // --- Выполнить действие с готовыми данными из backend payload ---
-  const execCopy = (link, rText) => {
-    if (!link) return;
-    navigator.clipboard.writeText(link).then(() =>
-      toast({ title: "✓ Ссылка скопирована!", description: rText ? `Вознаграждение реферала: ${rText}` : undefined })
+  const execCopy = () => {
+    if (!inviteLink) return;
+    navigator.clipboard.writeText(inviteLink).then(() =>
+      toast({ title: "✓ Ссылка скопирована!", description: `Вознаграждение реферала: ${rewardText}` })
     );
   };
 
-  const execTelegram = (link, cLink, tgText) => {
-    if (!link) return;
-    const url = `https://t.me/share/url?url=${encodeURIComponent(cLink || link)}&text=${encodeURIComponent(tgText)}`;
+  const execTelegram = () => {
+    if (!inviteLink) return;
+    const url = `https://t.me/share/url?url=${encodeURIComponent(candidateLink || inviteLink)}&text=${encodeURIComponent(telegramText)}`;
     window.open(url);
-  };
-
-  // Запоминаем pendingAction для выполнения после modal
-  const [pendingAction, setPendingAction] = useState(null);
-
-  // Единственная точка входа для copy/telegram
-  const handleShareAction = (action) => {
-    if (preparing) return;
-    if (hasSubprogram) {
-      // hook state уже backend-confirmed — действуем сразу
-      if (action === "copy") execCopy(inviteLink, rewardText);
-      if (action === "telegram") execTelegram(inviteLink, candidateLink, telegramText);
-      return;
-    }
-    if (!baseProgram) {
-      toast({ title: "Нет активной программы", description: "Перейди в «Мои программы»", variant: "destructive" });
-      return;
-    }
-    setPendingAction(action);
-    setShowModal(true);
-  };
-
-  // --- Колбэк SetRewardModal: получаем только quota (число) ---
-  // Orchestration вызывается здесь через prepareShareSubprogram из hook
-  const handleModalReady = async (requestedQuota) => {
-    setShowModal(false);
-
-    const action = pendingAction || "changeReward";
-    setPendingAction(null);
-
-    const result = await prepareShareSubprogram({ shareAction: action, requestedQuota });
-
-    if (!result.ok) {
-      toast({ title: "Ошибка", description: result.error || "Попробуйте ещё раз.", variant: "destructive" });
-      return;
-    }
-
-    const data = result.payload;
-
-    // Уведомить ReferralDashboard об обновлении подпрограммы
-    if (onSubprogramReady) onSubprogramReady(data);
-
-    if (data.wasReused) {
-      toast({ title: "✓ Используем существующую подпрограмму", description: `Вознаграждение: ${data.rewardAmount?.toLocaleString()} ₽` });
-    } else {
-      toast({ title: "✓ Подпрограмма создана", description: `Вознаграждение: ${data.rewardAmount?.toLocaleString()} ₽` });
-    }
-
-    // Выполнить отложенное действие с данными от сервера
-    if (action === "copy") execCopy(data.inviteLink, data.rewardAmount ? `${data.rewardAmount.toLocaleString()} ₽` : "");
-    if (action === "telegram") execTelegram(data.inviteLink, data.candidateLink, data.telegramText);
   };
 
   return (
@@ -139,8 +56,8 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
 
         <div className="p-5 space-y-4">
 
-          {/* Карточка "Активна сейчас" — ТОЛЬКО shareSubprogram, никаких fallback */}
-          {hasSubprogram ? (
+          {/* Карточка активной программы */}
+          {baseProgram ? (
             <div className="rounded-xl bg-primary/5 border border-primary/15 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -149,24 +66,11 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
                     <span className="text-xs font-semibold text-green-700">Активна сейчас</span>
                   </div>
                   <div className="font-semibold text-sm text-foreground truncate">{programTitle}</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Именно на эту подпрограмму ведут ваши ссылки</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Используется для приглашения рефералов</div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="text-lg font-black text-primary leading-none">{rewardText}</div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">реферал получит</div>
-                </div>
-              </div>
-            </div>
-          ) : baseProgram ? (
-            /* Empty state — подпрограмма не выбрана */
-            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-              <div className="flex items-start gap-3">
-                <Zap className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-sm font-semibold text-amber-800">Подпрограмма для новых рефералов ещё не выбрана</div>
-                  <div className="text-xs text-amber-700 mt-0.5">
-                    Укажите размер выплаты — система создаст её автоматически или переиспользует существующую
-                  </div>
                 </div>
               </div>
             </div>
@@ -189,11 +93,11 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
             </div>
           )}
 
-          {/* Action кнопки — только если есть базовая программа */}
-          {canAct && (
+          {/* Action кнопки — только если есть ссылка */}
+          {hasLink && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
-                onClick={() => handleShareAction("copy")}
+                onClick={execCopy}
                 className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
               >
                 <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -201,14 +105,12 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
                 </div>
                 <div>
                   <div className="font-semibold text-sm">Скопировать ссылку</div>
-                  <div className="text-xs text-muted-foreground">
-                    {hasSubprogram ? `Вознаграждение реферала: ${rewardText}` : "Сначала выберем размер выплаты"}
-                  </div>
+                  <div className="text-xs text-muted-foreground">Вознаграждение реферала: {rewardText}</div>
                 </div>
               </button>
 
               <button
-                onClick={() => handleShareAction("telegram")}
+                onClick={execTelegram}
                 className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
               >
                 <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
@@ -216,9 +118,7 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
                 </div>
                 <div>
                   <div className="font-semibold text-sm">Отправить в Telegram</div>
-                  <div className="text-xs text-muted-foreground">
-                    {hasSubprogram ? `С вознаграждением ${rewardText}` : "Сначала выберем размер выплаты"}
-                  </div>
+                  <div className="text-xs text-muted-foreground">С вознаграждением {rewardText}</div>
                 </div>
               </button>
             </div>
@@ -241,15 +141,6 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
 
         </div>
       </div>
-
-      {showModal && baseProgram && (
-        <SetRewardModal
-          baseProgram={baseProgram}
-          currentSubprogram={shareSubprogram}
-          onClose={() => { setShowModal(false); setPendingAction(null); }}
-          onReady={handleModalReady}
-        />
-      )}
     </>
   );
 }

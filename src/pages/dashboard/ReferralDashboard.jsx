@@ -18,7 +18,6 @@ import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Share2, Eye, EyeOff, Loader2, Link as LinkIcon, Copy } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { useDashboardShareSubprogram } from "@/lib/useDashboardShareSubprogram";
 import NetworkGrowthBlock from "@/components/dashboard/NetworkGrowthBlock";
 
 export default function ReferralDashboard() {
@@ -28,17 +27,8 @@ export default function ReferralDashboard() {
   const [baseProgram, setBaseProgram] = useState(null);
   const [baseProgramLoading, setBaseProgramLoading] = useState(false);
 
-  // Единственный источник истины для share-flow
-  const {
-    shareSubprogram,
-    setSubprogram,
-    clearSubprogram,
-    prepareShareSubprogram,
-    loading: shareLoading,
-  } = useDashboardShareSubprogram(profile?.id);
-
-  // Ссылка на анкету — берём из shareSubprogram если есть, иначе из baseProgram
-  const candidateFormCode = shareSubprogram?.candidate_form_code || baseProgram?.candidate_form_code;
+  // Ссылка на анкету — берём из baseProgram
+  const candidateFormCode = baseProgram?.candidate_form_code;
   const candidateLink = candidateFormCode
     ? `${window.location.origin}/candidate/${candidateFormCode}`
     : "";
@@ -76,14 +66,6 @@ export default function ReferralDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
-  // LAUNCH-MODE: очистить stale sharable subprogram если она от другой базы
-  useEffect(() => {
-    if (!baseProgram || !shareSubprogram) return;
-    if (shareSubprogram.parent_program_id !== baseProgram.id) {
-      clearSubprogram();
-    }
-  }, [baseProgram?.id, shareSubprogram?.id, clearSubprogram]);
-
   const loadStats = async () => {
     try {
       const [referrals, candidates, rewards] = await Promise.all([
@@ -111,16 +93,9 @@ export default function ReferralDashboard() {
     }
   };
 
-  // Колбэк от NetworkGrowthBlock после create/reuse через modal
-  const handleSubprogramReady = (data) => {
-    if (data?.program) {
-      setSubprogram(data.program);
-    }
-  };
-
   // baseProgramLoading намеренно НЕ включён в isLoading:
   // страница рендерится сразу, CTA показывает свой локальный spinner или recovery state.
-  const isLoading = loading || shareLoading;
+  const isLoading = loading;
 
   if (isLoading) {
     return (
@@ -206,14 +181,10 @@ export default function ReferralDashboard() {
           </Button>
         </div>
 
-        {/* БЛОК МАСШТАБИРОВАНИЯ СЕТИ — использует новый share-flow */}
-        <NetworkGrowthBlock
-          shareSubprogram={shareSubprogram}
-          baseProgram={baseProgram}
-          onSubprogramReady={handleSubprogramReady}
-          prepareShareSubprogram={prepareShareSubprogram}
-          preparing={shareLoading}
-        />
+        {/* БЛОК МАСШТАБИРОВАНИЯ СЕТИ */}
+         <NetworkGrowthBlock
+           baseProgram={baseProgram}
+         />
 
         {/* MICRO STATS */}
         <div className="bg-muted rounded-lg p-4 mb-8 text-center text-sm text-muted-foreground">
