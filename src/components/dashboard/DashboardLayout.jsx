@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from "react-router-dom";
 import { Shield, LayoutDashboard, Briefcase, LinkIcon, Users, Banknote, CreditCard, Trophy, LogOut, Key, Menu, X } from "lucide-react";
 import { clearStoredProfile } from "@/lib/profileSession";
 import { ProfileProvider } from "@/lib/useProfile.jsx";
+import PayoutReminderBanner from "@/components/dashboard/PayoutReminderBanner";
 
 const navItems = [
   { path: "/dashboard", icon: LayoutDashboard, label: "Обзор" },
@@ -93,6 +94,7 @@ export default function DashboardLayout() {
             </div>
           )}
 
+          <PayoutReminderBanner />
           <main className="flex-1 p-4 md:p-8 overflow-y-auto">
             <Outlet />
           </main>
