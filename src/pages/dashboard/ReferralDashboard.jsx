@@ -55,44 +55,15 @@ export default function ReferralDashboard() {
        });
 
        const isValidBase = (p) =>
-         p.is_active === true &&
-         p.is_archived !== true &&
-         p.program_status === "active" &&
-         (p.depth || 0) === 0 &&
-         p.program_kind !== "child";
+          p.is_archived !== true &&
+          p.program_status === "active" &&
+          (p.depth || 0) === 0 &&
+          p.program_kind !== "child";
 
-       // Попробовать загрузить активную из "Мои программы"
-       const selectedId = sessionStorage.getItem("mp_selected_program_id");
-       const selected = selectedId ? all.find(p => p.id === selectedId) : null;
-
-       // Если выбрана — проверить что это валидный base, иначе взять её root родителя
-       let resolved = null;
-       if (selected) {
-         if (isValidBase(selected)) {
-           resolved = selected;
-         } else if (selected.parent_program_id) {
-           // Это child — ищем его root родителя
-           let current = selected;
-           const visited = new Set();
-           while (current?.parent_program_id && !visited.has(current.id)) {
-             visited.add(current.id);
-             const parent = all.find(p => p.id === current.parent_program_id);
-             if (!parent) break;
-             if (isValidBase(parent)) {
-               resolved = parent;
-               break;
-             }
-             current = parent;
-           }
-         }
-       }
-
-       // Fallback: первая валидная root/base
-       if (!resolved) {
-         resolved = all
-           .filter(isValidBase)
-           .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
-       }
+        // Fallback: первая валидная root/base по дате создания
+        const resolved = all
+          .filter(isValidBase)
+          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
 
        setBaseProgram(resolved);
      } catch (e) {
