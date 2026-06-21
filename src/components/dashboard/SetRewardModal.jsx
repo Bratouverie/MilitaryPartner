@@ -50,16 +50,27 @@ export default function SetRewardModal({ baseProgram, currentSubprogram, onClose
     setLoading(true);
     setError("");
     try {
-      const res = await base44.functions.invoke("safePrepareReferralSubprogram", {
+      const res = await base44.functions.invoke("safePrepareDashboardShareSubprogram", {
         requestedQuota: Number(quota),
+        shareAction: "changeReward",
+        cachedSubprogramId: null,
       });
 
-      if (!res.data?.success) {
+      if (!res.data?.ok) {
         setError(res.data?.error || "Ошибка. Попробуйте ещё раз.");
         return;
       }
 
-      onReady(res.data);
+      // Нормализуем payload для onReady: добавляем поля обратной совместимости
+      onReady({
+        ...res.data,
+        success: true,
+        program: res.data.shareSubprogram,
+        rewardAmount: res.data.rewardAmount,
+        inviteLink: res.data.inviteLink,
+        candidateLink: res.data.candidateLink,
+        telegramText: res.data.telegramText,
+      });
     } catch (e) {
       setError("Ошибка сети. Попробуйте ещё раз.");
     } finally {

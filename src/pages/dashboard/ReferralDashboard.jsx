@@ -28,11 +28,12 @@ export default function ReferralDashboard() {
   const [baseProgram, setBaseProgram] = useState(null);
   const [baseProgramLoading, setBaseProgramLoading] = useState(false);
 
-  // Новый источник истины для share-flow
+  // Единственный источник истины для share-flow
   const {
     shareSubprogram,
     setSubprogram,
     clearSubprogram,
+    prepareShareSubprogram,
     loading: shareLoading,
   } = useDashboardShareSubprogram(profile?.id);
 
@@ -220,6 +221,8 @@ export default function ReferralDashboard() {
           shareSubprogram={shareSubprogram}
           baseProgram={baseProgram}
           onSubprogramReady={handleSubprogramReady}
+          prepareShareSubprogram={prepareShareSubprogram}
+          preparing={shareLoading}
         />
 
         {/* MICRO STATS */}
