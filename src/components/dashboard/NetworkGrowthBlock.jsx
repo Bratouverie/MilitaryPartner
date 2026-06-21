@@ -14,7 +14,7 @@
  *
  * B. Если shareSubprogram не выбрана:
  *    - copy и telegram → открывают SetRewardModal
- *    - после confirm → safePrepareReferralSubprogram → onSubprogramReady
+ *    - после confirm → prepareShareSubprogram (hook) → safePrepareDashboardShareSubprogram
  *    - затем выполняется отложенное действие
  *
  * ЗАПРЕЩЕНО:
@@ -119,9 +119,22 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
     setShowModal(true);
   };
 
-  // --- Колбэк SetRewardModal: payload уже от safePrepareDashboardShareSubprogram ---
-  const handleModalReady = (data) => {
+  // --- Колбэк SetRewardModal: получаем только quota (число) ---
+  // Orchestration вызывается здесь через prepareShareSubprogram из hook
+  const handleModalReady = async (requestedQuota) => {
     setShowModal(false);
+
+    const action = pendingAction || "changeReward";
+    setPendingAction(null);
+
+    const result = await prepareShareSubprogram({ shareAction: action, requestedQuota });
+
+    if (!result.ok) {
+      toast({ title: "Ошибка", description: result.error || "Попробуйте ещё раз.", variant: "destructive" });
+      return;
+    }
+
+    const data = result.payload;
 
     // Уведомить ReferralDashboard об обновлении подпрограммы
     if (onSubprogramReady) onSubprogramReady(data);
@@ -133,9 +146,8 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
     }
 
     // Выполнить отложенное действие с данными от сервера
-    if (pendingAction === "copy") execCopy(data.inviteLink, data.rewardAmount ? `${data.rewardAmount.toLocaleString()} ₽` : "");
-    if (pendingAction === "telegram") execTelegram(data.inviteLink, data.candidateLink, data.telegramText);
-    setPendingAction(null);
+    if (action === "copy") execCopy(data.inviteLink, data.rewardAmount ? `${data.rewardAmount.toLocaleString()} ₽` : "");
+    if (action === "telegram") execTelegram(data.inviteLink, data.candidateLink, data.telegramText);
   };
 
   return (

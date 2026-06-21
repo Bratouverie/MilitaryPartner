@@ -1,15 +1,13 @@
 /**
  * SetRewardModal — модал «Укажи размер выплаты рефералу».
  * Открывается при первом share/copy, при "Отправить в Telegram" и при "Изменить размер выплаты".
- * Вызывает safePrepareReferralSubprogram — find-or-create orchestration.
+ * Собирает requestedQuota и передаёт наружу через onReady(quota) — не знает про backend orchestration.
  * Поле пустое по умолчанию — явный выбор обязателен.
- * submittingRef защищает от race (двойной клик).
  */
-import React, { useState, useRef } from "react";
-import { base44 } from "@/api/base44Client";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, X, Zap, BadgeCheck } from "lucide-react";
+import { X, Zap, BadgeCheck } from "lucide-react";
 import { MIN_QUOTA, QUOTA_STEP } from "@/lib/programUtils";
 
 export default function SetRewardModal({ baseProgram, currentSubprogram, onClose, onReady }) {
@@ -18,10 +16,7 @@ export default function SetRewardModal({ baseProgram, currentSubprogram, onClose
 
   // Поле пустое — явный выбор обязателен
   const [quota, setQuota] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
-  const submittingRef = useRef(false);
 
   const maxQuota = parentQuota - QUOTA_STEP;
   const quotaNum = Number(quota);
@@ -41,42 +36,11 @@ export default function SetRewardModal({ baseProgram, currentSubprogram, onClose
     setFieldError(validate(val));
   };
 
-  const handleSubmit = async () => {
+  // Передаём только квоту наружу — backend orchestration в родителе
+  const handleSubmit = () => {
     const err = validate(quota);
     if (err) { setFieldError(err); return; }
-    if (submittingRef.current) return; // race protection
-    submittingRef.current = true;
-
-    setLoading(true);
-    setError("");
-    try {
-      const res = await base44.functions.invoke("safePrepareDashboardShareSubprogram", {
-        requestedQuota: Number(quota),
-        shareAction: "changeReward",
-        cachedSubprogramId: null,
-      });
-
-      if (!res.data?.ok) {
-        setError(res.data?.error || "Ошибка. Попробуйте ещё раз.");
-        return;
-      }
-
-      // Нормализуем payload для onReady: добавляем поля обратной совместимости
-      onReady({
-        ...res.data,
-        success: true,
-        program: res.data.shareSubprogram,
-        rewardAmount: res.data.rewardAmount,
-        inviteLink: res.data.inviteLink,
-        candidateLink: res.data.candidateLink,
-        telegramText: res.data.telegramText,
-      });
-    } catch (e) {
-      setError("Ошибка сети. Попробуйте ещё раз.");
-    } finally {
-      setLoading(false);
-      submittingRef.current = false;
-    }
+    onReady(Number(quota));
   };
 
   return (
@@ -166,14 +130,12 @@ export default function SetRewardModal({ baseProgram, currentSubprogram, onClose
             </div>
           )}
 
-          {error && <div className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</div>}
-
           <Button
             onClick={handleSubmit}
-            disabled={loading || !!fieldError || !quota}
+            disabled={!!fieldError || !quota}
             className="w-full bg-primary font-bold h-11"
           >
-            {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Создаём…</> : <><Zap className="w-4 h-4 mr-2" />Создать и использовать</>}
+            <Zap className="w-4 h-4 mr-2" />Создать и использовать
           </Button>
         </div>
       </div>

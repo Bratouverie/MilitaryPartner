@@ -58,8 +58,13 @@ export function useDashboardShareSubprogram(profileId) {
 
     setLoading(true);
     try {
-      const programs = await base44.entities.ReferralProgram.filter({ id: cachedId });
-      const prog = programs[0];
+      // Надёжный lookup: загружаем child-программы владельца и ищем по id в JS,
+      // т.к. filter({ id }) не гарантирован как точный lookup по первичному ключу
+      const programs = await base44.entities.ReferralProgram.filter({
+        owner_user_id: profileId,
+        program_kind: "child",
+      });
+      const prog = programs.find(p => p.id === cachedId);
 
       // Строгая валидация: должна быть child, активная, не архивная, принадлежать этому владельцу
       if (
