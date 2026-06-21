@@ -44,11 +44,9 @@ export default function ReferralDashboard() {
     : "";
 
   /**
-   * Загружает активную базовую программу.
-   * 1. Читает mp_selected_base_program_id (контекст базовой программы).
-   * 2. Fallback на mp_selected_program_id, если это валидный base.
-   * 3. Fallback на первую валидную base/root.
-   * 4. Синхронизирует sessionStorage.
+   * LAUNCH-MODE WORKAROUND:
+   * Загружает первую доступную валидную root/base программу без зависимости от storage-контекста.
+   * Это временное решение для быстрого запуска — не использует mp_selected_program_id или mp_selected_base_program_id.
    */
   const loadBaseProgram = useCallback(async () => {
     if (!profile?.id) return;
@@ -65,33 +63,10 @@ export default function ReferralDashboard() {
         (p.depth || 0) === 0 &&
         p.program_kind !== "child";
 
-      // Приоритет 1: mp_selected_base_program_id (контекст для dashboard)
-      const savedBaseId = sessionStorage.getItem("mp_selected_base_program_id");
-      const savedBase = savedBaseId ? all.find(p => p.id === savedBaseId) : null;
-
-      // Приоритет 2: mp_selected_program_id, только если это валидный base
-      const savedSelectedId = sessionStorage.getItem("mp_selected_program_id");
-      const savedSelected = savedSelectedId ? all.find(p => p.id === savedSelectedId) : null;
-
-      let resolved = null;
-
-      if (savedBase && isValidBase(savedBase)) {
-        resolved = savedBase;
-      } else if (savedSelected && isValidBase(savedSelected)) {
-        resolved = savedSelected;
-      } else {
-        // Приоритет 3: первая валидная base/root
-        const fallback = all
-          .filter(isValidBase)
-          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
-        if (fallback) {
-          resolved = fallback;
-        }
-      }
-
-      if (resolved) {
-        sessionStorage.setItem("mp_selected_base_program_id", resolved.id);
-      }
+      // Выбрать первую валидную root/base по дате создания, без storage-контекста
+      const resolved = all
+        .filter(isValidBase)
+        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
 
       setBaseProgram(resolved);
     } catch (e) {
@@ -109,6 +84,14 @@ export default function ReferralDashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
+
+  // LAUNCH-MODE: очистить stale sharable subprogram если она от другой базы
+  useEffect(() => {
+    if (!baseProgram || !shareSubprogram) return;
+    if (shareSubprogram.parent_program_id !== baseProgram.id) {
+      clearSubprogram();
+    }
+  }, [baseProgram?.id, shareSubprogram?.id, clearSubprogram]);
 
   const loadStats = async () => {
     try {
