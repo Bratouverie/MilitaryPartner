@@ -1,25 +1,26 @@
 /**
- * Компактный модал «Укажи размер выплаты рефералу».
- * Открывается при первом share/copy и при клике «Изменить размер выплаты».
- * Отправляет запрос на safePrepareReferralSubprogram.
+ * SetRewardModal — модал «Укажи размер выплаты рефералу».
+ * Открывается при первом share/copy, при "Отправить в Telegram" и при "Изменить размер выплаты".
+ * Вызывает safePrepareReferralSubprogram — find-or-create orchestration.
+ * Поле пустое по умолчанию — явный выбор обязателен.
+ * submittingRef защищает от race (двойной клик).
  */
 import React, { useState, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, X, Zap } from "lucide-react";
+import { Loader2, X, Zap, BadgeCheck } from "lucide-react";
 import { MIN_QUOTA, QUOTA_STEP } from "@/lib/programUtils";
 
-export default function SetRewardModal({ baseProgram, onClose, onReady }) {
+export default function SetRewardModal({ baseProgram, currentSubprogram, onClose, onReady }) {
   const parentQuota = baseProgram?.reward_quota || 0;
   const suggestedQuota = Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP || MIN_QUOTA;
 
-  // Поле пустое — пользователь обязан выбрать явно
+  // Поле пустое — явный выбор обязателен
   const [quota, setQuota] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
-  // Race-protection: не допускаем двойной submit
   const submittingRef = useRef(false);
 
   const maxQuota = parentQuota - QUOTA_STEP;
@@ -29,7 +30,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
     const n = Number(val);
     if (!Number.isFinite(n) || n <= 0) return "Введите сумму";
     if (n < MIN_QUOTA) return `Минимум — ${MIN_QUOTA.toLocaleString()} ₽`;
-    if (n % QUOTA_STEP !== 0) return `Должна быть кратна ${QUOTA_STEP.toLocaleString()} ₽`;
+    if (n % QUOTA_STEP !== 0) return `Сумма должна быть кратна ${QUOTA_STEP.toLocaleString()} ₽`;
     if (n >= parentQuota) return `Должна быть меньше вашей программы (${parentQuota.toLocaleString()} ₽)`;
     return "";
   };
@@ -43,8 +44,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
   const handleSubmit = async () => {
     const err = validate(quota);
     if (err) { setFieldError(err); return; }
-    // Race protection
-    if (submittingRef.current) return;
+    if (submittingRef.current) return; // race protection
     submittingRef.current = true;
 
     setLoading(true);
@@ -83,8 +83,18 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
         </div>
 
         <div className="p-5 space-y-4">
+          {/* Текущая активная подпрограмма — если уже есть */}
+          {currentSubprogram && (
+            <div className="flex items-center gap-2 bg-primary/5 border border-primary/15 rounded-xl px-3 py-2">
+              <BadgeCheck className="w-4 h-4 text-green-600 shrink-0" />
+              <span className="text-xs text-muted-foreground">
+                Сейчас активна: <strong className="text-foreground">{currentSubprogram.reward_quota?.toLocaleString()} ₽</strong>
+              </span>
+            </div>
+          )}
+
           <p className="text-sm text-muted-foreground leading-snug">
-            Укажи, сколько получит новый реферал — система создаст подпрограмму автоматически или переиспользует уже существующую.
+            Укажи, сколько получит новый реферал — система автоматически создаст подпрограмму или переиспользует уже существующую.
           </p>
 
           {/* Quota input */}
@@ -129,14 +139,14 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
                     }`}
                   >
                     {Math.round(pct * 100)}% · {val.toLocaleString()} ₽
-                    {pct === 0.5 && !isSelected && <span className="ml-1 text-primary/70">рекомендуем</span>}
+                    {pct === 0.5 && !isSelected && <span className="ml-1 opacity-60">рекомендуем</span>}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Helper — только если что-то введено */}
+          {/* Breakdown — только при корректном вводе */}
           {quotaNum > 0 && !fieldError && (
             <div className="bg-muted/60 rounded-xl p-3 text-xs text-muted-foreground leading-snug">
               Ваша программа: <strong>{parentQuota.toLocaleString()} ₽</strong><br />
@@ -152,8 +162,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
             disabled={loading || !!fieldError || !quota}
             className="w-full bg-primary font-bold h-11"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
-            {loading ? "Создаём…" : "Создать и использовать"}
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Создаём…</> : <><Zap className="w-4 h-4 mr-2" />Создать и использовать</>}
           </Button>
         </div>
       </div>

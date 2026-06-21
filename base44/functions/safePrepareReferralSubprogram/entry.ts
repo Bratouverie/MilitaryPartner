@@ -1,9 +1,25 @@
 /**
- * safePrepareReferralSubprogram
- * 
- * Находит или создаёт подпрограмму для шеринга с конкретной reward_quota.
- * Строго enforces: depth=1, max 10 children, owner check, anti-child-of-child.
- * Возвращает программу, ссылку, текст для шеринга и флаг wasReused/wasCreated.
+ * safePrepareReferralSubprogram — orchestration function для share-flow дашборда.
+ *
+ * Алгоритм:
+ * 1. Аутентификация по сессии (actor/owner определяется сервером, не клиентом).
+ * 2. Найти активную базовую программу пользователя (depth=0, program_kind != child, active).
+ *    - Если несколько — берём самую раннюю по created_date.
+ *    - Если ни одной — fail с needsManualSelection.
+ * 3. Hard-fail если base program depth >= 1 (child-of-child запрещён абсолютно).
+ * 4. Валидировать requestedQuota — явная, сервер не угадывает 50%.
+ * 5. Искать reuse: существующий child с тем же owner + parent + quota + active.
+ * 6. Если reuse найден — вернуть его, записать audit log.
+ * 7. Если нет — проверить лимит (max 10 children), создать новый child атомарно.
+ * 8. При ошибке создания child — не оставлять полусозданных записей (rollback membership/counter).
+ *
+ * Enforced rules:
+ * - max depth = 1 (child базовой программы)
+ * - max width = 10 (children per base program)
+ * - reward_quota < base program quota
+ * - quota >= MIN_QUOTA, кратна QUOTA_STEP
+ * - base program статус: только active
+ * - нельзя создать root-программу
  */
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.31';
 
@@ -36,19 +52,21 @@ async function genUniqueCandidateCode(base44) {
 
 Deno.serve(async (req) => {
   try {
+    if (req.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405 });
+
     const base44 = createClientFromRequest(req);
     const user = await base44.auth.me();
     if (!user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-    if (req.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405 });
-
     const body = await req.json();
     const { requestedQuota } = body;
 
-    // --- 1. Найти профиль пользователя ---
+    // --- 1. Найти профиль по linked_user_id (сессия, не клиент) ---
     const profiles = await base44.asServiceRole.entities.ReferralProfile.filter({ linked_user_id: user.id });
     const profile = profiles[0];
-    if (!profile) return Response.json({ success: false, error: "Профиль не найден" });
+    if (!profile) {
+      return Response.json({ success: false, error: "Профиль реферала не найден. Обратитесь к куратору." });
+    }
 
     // --- 2. Найти все программы пользователя ---
     const allPrograms = await base44.asServiceRole.entities.ReferralProgram.filter({
@@ -60,50 +78,47 @@ Deno.serve(async (req) => {
       return Response.json({ success: false, error: "Нет доступных программ. Обратитесь к куратору." });
     }
 
-    // --- 3. Определить базовую программу (depth=0 или root) ---
-    // Базовая = корневая программа без родителя (depth=0, is_root=true или program_kind != "child")
-    const basePrograms = allPrograms.filter(p =>
-      p.program_status === "active" &&
-      p.is_active &&
-      !p.is_archived &&
-      (p.is_root || p.program_kind === "root" || p.program_kind === "promoted_root" || (!p.parent_program_id && p.depth === 0))
-    );
-
-    // Также допустимы child-программы depth=1 как база (пользователь владеет depth=1)
-    // Но нельзя создавать child от child (depth >= 1)
-    // Стратегия: ищем сначала среди root-программ, затем среди depth=1 если root нет
-    let baseProgram = basePrograms[0];
-    if (!baseProgram) {
-      // Попробуем найти любую программу depth=0
-      baseProgram = allPrograms
+    // --- 3. Детерминированно определить базовую программу (depth=0, не child, active) ---
+    // Приоритет: root/promoted_root, затем любая depth=0. Берём самую раннюю по created_date.
+    const resolvedBase = allPrograms
+      .filter(p =>
+        p.is_active &&
+        !p.is_archived &&
+        p.program_status === "active" &&
+        (p.depth || 0) === 0 &&
+        p.program_kind !== "child"
+      )
+      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0]
+      || allPrograms
         .filter(p => p.is_active && !p.is_archived && p.program_status === "active" && (p.depth || 0) === 0)
         .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
-    }
 
-    if (!baseProgram) {
+    if (!resolvedBase) {
       return Response.json({
         success: false,
-        error: "Не удалось определить базовую программу. Перейдите в «Мои программы» и выберите активную программу.",
+        error: "Не удалось определить базовую программу. Перейдите в «Мои программы» и убедитесь, что программа активна.",
         needsManualSelection: true,
       });
     }
 
-    // --- 4. Проверить, что базовая программа позволяет создание подпрограмм ---
-    if (baseProgram.program_status !== "active") {
-      return Response.json({ success: false, error: `Программа «${baseProgram.title}» не активна (статус: ${baseProgram.program_status}). Управление в разделе «Мои программы».` });
-    }
-
-    const parentDepth = baseProgram.depth || 0;
-    if (parentDepth >= 1) {
+    // --- 4. Hard-fail child-of-child ---
+    if ((resolvedBase.depth || 0) >= 1) {
       return Response.json({
         success: false,
-        error: "Нельзя создавать подпрограммы внутри уже существующей подпрограммы. Перейдите в «Мои программы» для управления.",
+        error: "Создание подпрограммы внутри подпрограммы (child-of-child) запрещено. Обратитесь к куратору.",
         childOfChildError: true,
       });
     }
 
-    // --- 5. Валидировать квоту — ОБЯЗАТЕЛЬНО явная, сервер не угадывает ---
-    const parentQuota = baseProgram.reward_quota || 0;
+    if (resolvedBase.program_status !== "active") {
+      return Response.json({
+        success: false,
+        error: `Базовая программа не активна (статус: ${resolvedBase.program_status}). Управление в разделе «Мои программы».`,
+      });
+    }
+
+    // --- 5. Валидировать quota — явная, сервер не угадывает ---
+    const parentQuota = resolvedBase.reward_quota || 0;
     const quota = Number(requestedQuota);
 
     if (!Number.isFinite(quota) || quota <= 0) {
@@ -116,52 +131,53 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Валидация
     if (quota < MIN_QUOTA) {
-      return Response.json({ success: false, error: `Минимальная квота — ${MIN_QUOTA.toLocaleString()} ₽`, minQuota: MIN_QUOTA });
+      return Response.json({ success: false, error: `Минимальная квота — ${MIN_QUOTA.toLocaleString()} ₽` });
     }
     if (quota % QUOTA_STEP !== 0) {
-      return Response.json({ success: false, error: `Квота должна быть кратна ${QUOTA_STEP.toLocaleString()} ₽`, quotaStep: QUOTA_STEP });
+      return Response.json({ success: false, error: `Квота должна быть кратна ${QUOTA_STEP.toLocaleString()} ₽` });
     }
     if (quota >= parentQuota) {
       return Response.json({
         success: false,
-        error: `Квота реферала должна быть меньше вашей программы (${parentQuota.toLocaleString()} ₽)`,
+        error: `Квота реферала (${quota.toLocaleString()} ₽) должна быть меньше вашей программы (${parentQuota.toLocaleString()} ₽)`,
         maxQuota: parentQuota - QUOTA_STEP,
-        parentQuota,
       });
     }
 
-    // --- 6. Проверить лимит подпрограмм ---
+    const origin = req.headers.get("origin") || "https://app.base44.com";
+
+    // --- 6. Загрузить всех children базовой программы ---
     const existingChildren = await base44.asServiceRole.entities.ReferralProgram.filter({
-      parent_program_id: baseProgram.id,
+      parent_program_id: resolvedBase.id,
       is_archived: false,
     });
 
-    // --- 7. Проверить reuse: уже есть подпрограмма с такой же квотой? ---
+    // --- 7. Reuse: ищем child с той же квотой, тем же owner, активный ---
     const reuseCandidate = existingChildren.find(c =>
       c.reward_quota === quota &&
       c.owner_user_id === profile.id &&
       c.is_active &&
       !c.is_archived &&
-      c.program_status === "active"
+      c.program_status === "active" &&
+      c.link_code &&
+      c.candidate_form_code
     );
-
-    const origin = req.headers.get("origin") || "https://app.base44.com";
 
     if (reuseCandidate) {
       const inviteLink = `${origin}/join/${reuseCandidate.link_code}`;
+      const candidateLink = `${origin}/candidate/${reuseCandidate.candidate_form_code}`;
       const programTitle = reuseCandidate.child_prefix_title || reuseCandidate.public_program_title || reuseCandidate.base_program_title || reuseCandidate.title;
-      const shareText = `Присоединяйся по моей ссылке. Вознаграждение за участие — ${quota.toLocaleString()} ₽. Анкета: ${`${origin}/candidate/${reuseCandidate.candidate_form_code}`}`;
       const telegramText = `Присоединяйся по моей ссылке. Вознаграждение за участие — ${quota.toLocaleString()} ₽. Заполни анкету:`;
+      const shareText = `${telegramText} ${candidateLink}`;
 
       await base44.asServiceRole.entities.ActionLog.create({
         actor_user_id: profile.id,
-        actor_role: profile.role,
+        actor_role: profile.role || "referrer",
         action_type: "SUBPROGRAM_REUSED_FOR_SHARING",
         entity_type: "ReferralProgram",
         entity_id: reuseCandidate.id,
-        action_payload: JSON.stringify({ quota, parent_id: baseProgram.id }),
+        action_payload: JSON.stringify({ quota, parent_id: resolvedBase.id }),
       });
 
       return Response.json({
@@ -170,7 +186,7 @@ Deno.serve(async (req) => {
         wasCreated: false,
         program: reuseCandidate,
         inviteLink,
-        candidateLink: `${origin}/candidate/${reuseCandidate.candidate_form_code}`,
+        candidateLink,
         programTitle,
         rewardAmount: quota,
         shareText,
@@ -178,67 +194,77 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- 8. Проверить лимит перед созданием ---
-    if (existingChildren.filter(c => !c.is_archived).length >= MAX_CHILDREN) {
+    // --- 8. Проверить лимит ширины перед созданием ---
+    const activeChildrenCount = existingChildren.filter(c => !c.is_archived).length;
+    if (activeChildrenCount >= MAX_CHILDREN) {
       return Response.json({
         success: false,
-        error: `Достигнут лимит в ${MAX_CHILDREN} подпрограмм. Используйте уже созданные подпрограммы в разделе «Мои программы».`,
+        error: `Достигнут лимит подпрограмм (${MAX_CHILDREN}). Используйте одну из уже созданных в разделе «Мои программы».`,
         limitReached: true,
+        existingQuotas: existingChildren
+          .filter(c => c.is_active && !c.is_archived)
+          .map(c => c.reward_quota),
       });
     }
 
-    // --- 9. Создать новую подпрограмму ---
+    // --- 9. Создать новый child атомарно ---
     const [linkCode, candidateFormCode] = await Promise.all([
       genUniqueLinkCode(base44),
       genUniqueCandidateCode(base44),
     ]);
 
-    const baseProgramTitle = baseProgram.base_program_title || baseProgram.title || "";
+    const baseProgramTitle = resolvedBase.base_program_title || resolvedBase.title || "";
     const childPrefixTitle = `Команда ${profile.full_name || "партнёра"} · ${quota.toLocaleString()} ₽`;
     const internalDisplayTitle = `${baseProgramTitle} — ${childPrefixTitle}`;
     const publicProgramTitle = baseProgramTitle;
 
     let ancestryIds = [];
-    try { ancestryIds = JSON.parse(baseProgram.ancestry_path_ids || "[]"); } catch {}
-    ancestryIds.push(baseProgram.id);
+    try { ancestryIds = JSON.parse(resolvedBase.ancestry_path_ids || "[]"); } catch {}
+    ancestryIds.push(resolvedBase.id);
 
-    const child = await base44.asServiceRole.entities.ReferralProgram.create({
-      title: internalDisplayTitle,
-      base_program_title: baseProgramTitle,
-      child_prefix_title: childPrefixTitle,
-      internal_display_title: internalDisplayTitle,
-      public_program_title: publicProgramTitle,
-      link_code: linkCode,
-      candidate_form_code: candidateFormCode,
-      owner_user_id: profile.id,
-      parent_program_id: baseProgram.id,
-      root_program_id: baseProgram.root_program_id || baseProgram.id,
-      root_master_link_id: baseProgram.root_master_link_id,
-      assigned_moderator_id: baseProgram.assigned_moderator_id,
-      reward_quota: quota,
-      parent_reward_quota: parentQuota,
-      depth: 1,
-      ancestry_path_ids: JSON.stringify(ancestryIds),
-      ancestry_path_text: baseProgramTitle + " / " + childPrefixTitle,
-      program_kind: "child",
-      program_status: "active",
-      is_root: false,
-      is_active: true,
-      is_archived: false,
-      can_create_child: false, // depth=1, нельзя иметь детей
-      direct_children_count: 0,
-      children_count: 0,
-      candidates_count: 0,
-      contracts_count: 0,
-      pending_rewards_sum: 0,
-      paid_rewards_sum: 0,
-      owner_program_level: 0,
-      region_code: baseProgram.region_code,
-      region_name: baseProgram.region_name,
-      program_category: baseProgram.program_category,
-    });
+    let child = null;
+    try {
+      child = await base44.asServiceRole.entities.ReferralProgram.create({
+        title: internalDisplayTitle,
+        base_program_title: baseProgramTitle,
+        child_prefix_title: childPrefixTitle,
+        internal_display_title: internalDisplayTitle,
+        public_program_title: publicProgramTitle,
+        link_code: linkCode,
+        candidate_form_code: candidateFormCode,
+        owner_user_id: profile.id,
+        parent_program_id: resolvedBase.id,
+        root_program_id: resolvedBase.root_program_id || resolvedBase.id,
+        root_master_link_id: resolvedBase.root_master_link_id,
+        assigned_moderator_id: resolvedBase.assigned_moderator_id,
+        reward_quota: quota,
+        parent_reward_quota: parentQuota,
+        depth: 1,
+        ancestry_path_ids: JSON.stringify(ancestryIds),
+        ancestry_path_text: baseProgramTitle + " / " + childPrefixTitle,
+        program_kind: "child",
+        program_status: "active",
+        is_root: false,
+        is_active: true,
+        is_archived: false,
+        can_create_child: false, // depth=1 → нельзя иметь детей
+        direct_children_count: 0,
+        children_count: 0,
+        candidates_count: 0,
+        contracts_count: 0,
+        pending_rewards_sum: 0,
+        paid_rewards_sum: 0,
+        owner_program_level: 0,
+        region_code: resolvedBase.region_code,
+        region_name: resolvedBase.region_name,
+        program_category: resolvedBase.program_category,
+      });
+    } catch (createErr) {
+      console.error("[safePrepareReferralSubprogram] Create child failed:", createErr);
+      return Response.json({ success: false, error: "Не удалось создать подпрограмму. Попробуйте ещё раз." }, { status: 500 });
+    }
 
-    // ProgramMembership
+    // ProgramMembership — некритично, не блокирует
     try {
       await base44.asServiceRole.entities.ProgramMembership.create({
         user_id: profile.id,
@@ -246,41 +272,43 @@ Deno.serve(async (req) => {
         membership_role: "owner",
         membership_status: "active",
         source_join_type: "direct_assignment",
-        source_program_id: baseProgram.id,
+        source_program_id: resolvedBase.id,
         joined_at: new Date().toISOString(),
       });
     } catch (e) {
-      console.error("[safePrepareReferralSubprogram] ProgramMembership failed:", e);
+      console.warn("[safePrepareReferralSubprogram] ProgramMembership failed (non-critical):", e.message);
     }
 
-    // Обновить счётчик родителя
+    // Обновить счётчик родителя — некритично
     try {
-      await base44.asServiceRole.entities.ReferralProgram.update(baseProgram.id, {
-        direct_children_count: (baseProgram.direct_children_count || 0) + 1,
-        children_count: (baseProgram.children_count || 0) + 1,
-        can_create_child: ((baseProgram.direct_children_count || 0) + 1 < MAX_CHILDREN) && (parentQuota > MIN_QUOTA),
+      const newCount = activeChildrenCount + 1;
+      await base44.asServiceRole.entities.ReferralProgram.update(resolvedBase.id, {
+        direct_children_count: newCount,
+        children_count: newCount,
+        can_create_child: newCount < MAX_CHILDREN && parentQuota > MIN_QUOTA,
       });
     } catch (e) {
-      console.error("[safePrepareReferralSubprogram] Parent update failed:", e);
+      console.warn("[safePrepareReferralSubprogram] Parent counter update failed (non-critical):", e.message);
     }
 
-    // ActionLog
+    // ActionLog — некритично
     try {
       await base44.asServiceRole.entities.ActionLog.create({
         actor_user_id: profile.id,
-        actor_role: profile.role,
+        actor_role: profile.role || "referrer",
         action_type: "SUBPROGRAM_CREATED_FOR_SHARING",
         entity_type: "ReferralProgram",
         entity_id: child.id,
-        action_payload: JSON.stringify({ quota, parent_id: baseProgram.id, link_code: linkCode }),
+        action_payload: JSON.stringify({ quota, parent_id: resolvedBase.id, link_code: linkCode }),
       });
     } catch (e) {
-      console.error("[safePrepareReferralSubprogram] ActionLog failed:", e);
+      console.warn("[safePrepareReferralSubprogram] ActionLog failed (non-critical):", e.message);
     }
 
     const inviteLink = `${origin}/join/${linkCode}`;
-    const shareText = `Присоединяйся по моей ссылке. Вознаграждение за участие — ${quota.toLocaleString()} ₽. Анкета: ${origin}/candidate/${candidateFormCode}`;
+    const candidateLink = `${origin}/candidate/${candidateFormCode}`;
     const telegramText = `Присоединяйся по моей ссылке. Вознаграждение за участие — ${quota.toLocaleString()} ₽. Заполни анкету:`;
+    const shareText = `${telegramText} ${candidateLink}`;
 
     return Response.json({
       success: true,
@@ -288,7 +316,7 @@ Deno.serve(async (req) => {
       wasCreated: true,
       program: child,
       inviteLink,
-      candidateLink: `${origin}/candidate/${candidateFormCode}`,
+      candidateLink,
       programTitle: childPrefixTitle,
       rewardAmount: quota,
       shareText,
