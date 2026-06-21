@@ -72,41 +72,24 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
     window.open(url);
   };
 
-  // --- Клик copy или telegram — всегда через backend orchestration ---
-  const handleShareAction = async (action) => {
-    if (preparing) return; // double-click guard
+  // Запоминаем pendingAction для выполнения после modal
+  const [pendingAction, setPendingAction] = useState(null);
 
+  // Единственная точка входа для copy/telegram
+  const handleShareAction = (action) => {
+    if (preparing) return;
     if (hasSubprogram) {
-      // Подпрограмма уже есть — действуем немедленно с текущими данными
+      // hook state уже backend-confirmed — действуем сразу
       if (action === "copy") execCopy(inviteLink, rewardText);
       if (action === "telegram") execTelegram(inviteLink, candidateLink, telegramText);
       return;
     }
-
     if (!baseProgram) {
       toast({ title: "Нет активной программы", description: "Перейди в «Мои программы»", variant: "destructive" });
       return;
     }
-
-    // Нет подпрограммы — сначала выбрать квоту через modal
+    setPendingAction(action);
     setShowModal(true);
-    // pendingAction больше не нужен — modal вернёт готовый payload через handleModalReady
-    // и мы выполним action тогда
-  };
-
-  // Временно запоминаем pendingAction для выполнения после modal
-  const [pendingAction, setPendingAction] = useState(null);
-
-  const handleShareActionWithModal = (action) => {
-    if (hasSubprogram) {
-      if (action === "copy") execCopy(inviteLink, rewardText);
-      if (action === "telegram") execTelegram(inviteLink, candidateLink, telegramText);
-    } else if (baseProgram) {
-      setPendingAction(action);
-      setShowModal(true);
-    } else {
-      toast({ title: "Нет активной программы", description: "Перейди в «Мои программы»", variant: "destructive" });
-    }
   };
 
   // --- Кнопка «Изменить размер выплаты» — открывает modal с shareAction: changeReward ---
@@ -220,7 +203,7 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
           {canAct && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
-                onClick={() => handleShareActionWithModal("copy")}
+                onClick={() => handleShareAction("copy")}
                 className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
               >
                 <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -235,7 +218,7 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
               </button>
 
               <button
-                onClick={() => handleShareActionWithModal("telegram")}
+                onClick={() => handleShareAction("telegram")}
                 className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
               >
                 <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
