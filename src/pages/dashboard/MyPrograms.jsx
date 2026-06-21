@@ -17,6 +17,33 @@ import {
 import { validateQuota, canHaveChildren, createChildProgram, MIN_QUOTA, QUOTA_STEP, MAX_DIRECT_CHILDREN } from "@/lib/programUtils";
 
 const SELECTED_KEY = "mp_selected_program_id";
+const BASE_KEY = "mp_selected_base_program_id";
+
+const isValidBase = (p) =>
+  p &&
+  p.is_active === true &&
+  p.is_archived !== true &&
+  p.program_status === "active" &&
+  (p.depth || 0) === 0 &&
+  p.program_kind !== "child";
+
+const resolveBaseProgramId = (program, allPrograms) => {
+  if (!program) return null;
+  if (isValidBase(program)) return program.id;
+
+  let current = program;
+  const visited = new Set();
+
+  while (current?.parent_program_id && !visited.has(current.id)) {
+    visited.add(current.id);
+    const parent = allPrograms.find(p => p.id === current.parent_program_id);
+    if (!parent) return null;
+    if (isValidBase(parent)) return parent.id;
+    current = parent;
+  }
+
+  return null;
+};
 
 const STATUS_LABELS = { active: "Активна", frozen: "Заморожена", replaced: "Заменена", archived: "В архиве" };
 const STATUS_COLORS = {
@@ -48,8 +75,26 @@ export default function MyPrograms() {
       const savedId = sessionStorage.getItem(SELECTED_KEY);
       if (!savedId || !sorted.find(p => p.id === savedId)) {
         if (sorted.length > 0) {
-          setSelectedId(sorted[0].id);
-          sessionStorage.setItem(SELECTED_KEY, sorted[0].id);
+          const prog = sorted[0];
+          setSelectedId(prog.id);
+          sessionStorage.setItem(SELECTED_KEY, prog.id);
+          const baseId = resolveBaseProgramId(prog, sorted);
+          if (baseId) {
+            sessionStorage.setItem(BASE_KEY, baseId);
+          } else {
+            sessionStorage.removeItem(BASE_KEY);
+          }
+        }
+      } else {
+        // Синхронизировать BASE_KEY для сохранённого выбора
+        const savedProg = sorted.find(p => p.id === savedId);
+        if (savedProg) {
+          const baseId = resolveBaseProgramId(savedProg, sorted);
+          if (baseId) {
+            sessionStorage.setItem(BASE_KEY, baseId);
+          } else {
+            sessionStorage.removeItem(BASE_KEY);
+          }
         }
       }
     } catch {}
@@ -59,8 +104,18 @@ export default function MyPrograms() {
   useEffect(() => { load(); }, [load]);
 
   const selectProgram = (id) => {
+    const prog = programs.find(p => p.id === id) || null;
+
     setSelectedId(id);
     sessionStorage.setItem(SELECTED_KEY, id);
+
+    const baseId = resolveBaseProgramId(prog, programs);
+    if (baseId) {
+      sessionStorage.setItem(BASE_KEY, baseId);
+    } else {
+      sessionStorage.removeItem(BASE_KEY);
+    }
+
     base44.entities.ActionLog.create({
       actor_user_id: profile?.id,
       action_type: "PROGRAM_CONTEXT_SWITCHED",

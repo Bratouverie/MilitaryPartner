@@ -45,22 +45,19 @@ export default function ReferralDashboard() {
 
   /**
    * Загружает активную базовую программу.
-   * 1. Читает mp_selected_program_id из sessionStorage (выбор из MyPrograms).
-   * 2. Ищет эту программу среди программ пользователя и валидирует.
-   * 3. Fallback на первую валидную root если selected не подходит.
-   * 4. Обновляет sessionStorage корректным id при fallback.
+   * 1. Читает mp_selected_base_program_id (контекст базовой программы).
+   * 2. Fallback на mp_selected_program_id, если это валидный base.
+   * 3. Fallback на первую валидную base/root.
+   * 4. Синхронизирует sessionStorage.
    */
   const loadBaseProgram = useCallback(async () => {
     if (!profile?.id) return;
     setBaseProgramLoading(true);
     try {
-      // ВАЖНО: фильтруем только по owner_user_id, без is_archived:false —
-      // поля с undefined/null в БД не матчатся на false и программы теряются.
       const all = await base44.entities.ReferralProgram.filter({
         owner_user_id: profile.id,
       });
 
-      // Строгая валидация base program — только в JS после загрузки всего списка
       const isValidBase = (p) =>
         p.is_active === true &&
         p.is_archived !== true &&
@@ -68,24 +65,32 @@ export default function ReferralDashboard() {
         (p.depth || 0) === 0 &&
         p.program_kind !== "child";
 
-      // 1. Попробовать сохранённый selected из MyPrograms
-      const savedId = sessionStorage.getItem("mp_selected_program_id");
-      const saved = savedId ? all.find(p => p.id === savedId) : null;
+      // Приоритет 1: mp_selected_base_program_id (контекст для dashboard)
+      const savedBaseId = sessionStorage.getItem("mp_selected_base_program_id");
+      const savedBase = savedBaseId ? all.find(p => p.id === savedBaseId) : null;
+
+      // Приоритет 2: mp_selected_program_id, только если это валидный base
+      const savedSelectedId = sessionStorage.getItem("mp_selected_program_id");
+      const savedSelected = savedSelectedId ? all.find(p => p.id === savedSelectedId) : null;
 
       let resolved = null;
-      if (saved && isValidBase(saved)) {
-        // Сохранённая программа валидна — используем её
-        resolved = saved;
+
+      if (savedBase && isValidBase(savedBase)) {
+        resolved = savedBase;
+      } else if (savedSelected && isValidBase(savedSelected)) {
+        resolved = savedSelected;
       } else {
-        // 2. Fallback: первая валидная root по дате создания
+        // Приоритет 3: первая валидная base/root
         const fallback = all
           .filter(isValidBase)
           .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
         if (fallback) {
           resolved = fallback;
-          // Синхронизируем sessionStorage чтобы MyPrograms видел тот же выбор
-          sessionStorage.setItem("mp_selected_program_id", fallback.id);
         }
+      }
+
+      if (resolved) {
+        sessionStorage.setItem("mp_selected_base_program_id", resolved.id);
       }
 
       setBaseProgram(resolved);
