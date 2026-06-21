@@ -2,14 +2,15 @@ import React, { useState, useEffect } from "react";
 import { useProfile } from "@/lib/useProfile";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
-import { Copy, Share2, Send, Eye, EyeOff, Loader2, Link as LinkIcon } from "lucide-react";
+import { Share2, Eye, EyeOff, Loader2, Link as LinkIcon, Copy } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useActiveInviteProgram } from "@/lib/useActiveInviteProgram";
+import NetworkGrowthBlock from "@/components/dashboard/NetworkGrowthBlock";
 
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
-  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getTelegramShareUrl, getRewardAmount, getCandidateLink } = useActiveInviteProgram(profile?.id);
+  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getCandidateLink } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
@@ -68,27 +69,7 @@ export default function ReferralDashboard() {
     }
   };
 
-  const handleCopyLink = async () => {
-    await navigator.clipboard.writeText(referralLink);
-    toast({ title: "✓ Ссылка скопирована!" });
-  };
 
-  const handleShare = () => {
-    if (navigator.share && referralLink) {
-      const rewardText = getRewardAmount();
-      navigator.share({
-        title: "МилитариПартнер",
-        text: `Присоединяйся к программе! За каждого кандидата платят ${rewardText}.`,
-        url: referralLink,
-      });
-    }
-  };
-
-  const handleTelegram = () => {
-    const shareUrl = getTelegramShareUrl();
-    if (!shareUrl) { toast({ title: "Ссылка приглашения не готова", variant: "destructive" }); return; }
-    window.open(shareUrl);
-  };
 
   if (loading || inviteLoading) {
     return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>;
@@ -151,40 +132,11 @@ export default function ReferralDashboard() {
           </Button>
         </div>
 
-        {/* БЛОК РАСПРОСТРАНЕНИЯ / МАСШТАБИРОВАНИЯ СЕТИ */}
-        <div className="bg-card border border-border rounded-2xl p-4 mb-8">
-          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">
-            Масштабируй сеть
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              onClick={() => candidateLink && navigator.clipboard.writeText(candidateLink).then(() => toast({ title: "✓ Ссылка скопирована!" }))}
-              disabled={!candidateLink}
-              className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <Copy className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Скопировать ссылку</div>
-                <div className="text-xs text-muted-foreground">Отправить в любом канале</div>
-              </div>
-            </button>
-
-            <button
-              onClick={handleTelegram}
-              className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 transition-colors"
-            >
-              <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                <Send className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Отправить в Telegram</div>
-                <div className="text-xs text-muted-foreground">Быстрый share-канал роста</div>
-              </div>
-            </button>
-          </div>
-        </div>
+        {/* БЛОК МАСШТАБИРОВАНИЯ СЕТИ */}
+        <NetworkGrowthBlock
+          inviteProgram={inviteProgram}
+          inviteLink={inviteLink}
+        />
 
         {/* MICRO STATS */}
         <div className="bg-muted rounded-lg p-4 mb-8 text-center text-sm text-muted-foreground">
