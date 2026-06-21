@@ -1,21 +1,45 @@
+/**
+ * ReferralDashboard — главная страница партнёра.
+ *
+ * DATA FLOW:
+ * - baseProgram: активная базовая программа (depth=0, active) — только читается, не меняется с dashboard.
+ * - shareSubprogram: dashboard sharable subprogram — создаётся/переиспользуется через SetRewardModal
+ *   → safePrepareReferralSubprogram → useDashboardShareSubprogram.
+ *
+ * ЗАПРЕЩЕНО С ЭТОЙ СТРАНИЦЫ:
+ * - создавать root-программы
+ * - менять активную базовую программу
+ * - использовать createDefaultInviteSubprogram
+ * - silently выбирать любую child-программу как sharable
+ */
 import React, { useState, useEffect } from "react";
 import { useProfile } from "@/lib/useProfile";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Share2, Eye, EyeOff, Loader2, Link as LinkIcon, Copy } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { useActiveInviteProgram } from "@/lib/useActiveInviteProgram";
+import { useDashboardShareSubprogram } from "@/lib/useDashboardShareSubprogram";
 import NetworkGrowthBlock from "@/components/dashboard/NetworkGrowthBlock";
-
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
-  const { inviteProgram, inviteLink, loading: inviteLoading, getCandidateLink, setActiveProgram } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
   const [baseProgram, setBaseProgram] = useState(null);
-  const referralLink = inviteLink;
-  const candidateLink = getCandidateLink();
+  const [baseProgramLoading, setBaseProgramLoading] = useState(false);
+
+  // Новый источник истины для share-flow
+  const {
+    shareSubprogram,
+    setSubprogram,
+    loading: shareLoading,
+  } = useDashboardShareSubprogram(profile?.id);
+
+  // Ссылка на анкету — берём из shareSubprogram если есть, иначе из baseProgram
+  const candidateFormCode = shareSubprogram?.candidate_form_code || baseProgram?.candidate_form_code;
+  const candidateLink = candidateFormCode
+    ? `${window.location.origin}/candidate/${candidateFormCode}`
+    : "";
 
   useEffect(() => {
     if (profile?.id) {
@@ -24,69 +48,86 @@ export default function ReferralDashboard() {
     }
   }, [profile?.id]);
 
+  /**
+   * Загружает активную базовую программу.
+   * ТОЛЬКО ЧИТАЕТ — не переключает, не угадывает.
+   * depth=0, program_kind != child, active — самая ранняя по created_date.
+   */
   const loadBaseProgram = async () => {
+    setBaseProgramLoading(true);
     try {
-      const all = await base44.entities.ReferralProgram.filter({ owner_user_id: profile?.id, is_archived: false });
+      const all = await base44.entities.ReferralProgram.filter({
+        owner_user_id: profile.id,
+        is_archived: false,
+      });
+
       const root = all
-        .filter(p => p.is_active && !p.is_archived && p.program_status === "active" && (p.is_root || p.program_kind === "root" || p.program_kind === "promoted_root" || (!p.parent_program_id && (p.depth || 0) === 0)))
+        .filter(p =>
+          p.is_active &&
+          !p.is_archived &&
+          p.program_status === "active" &&
+          (p.depth || 0) === 0 &&
+          p.program_kind !== "child"
+        )
         .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
+
       setBaseProgram(root || null);
     } catch (e) {
-      console.error("loadBaseProgram error:", e);
-    }
-  };
-
-  // Колбэк: подпрограмма готова (создана или переиспользована через модал)
-  const handleSubprogramReady = (data) => {
-    if (data?.program) {
-      setActiveProgram(data.program);
+      console.error("[ReferralDashboard] loadBaseProgram error:", e);
+    } finally {
+      setBaseProgramLoading(false);
     }
   };
 
   const loadStats = async () => {
     try {
-      // Загружаем статистику рефералов
-      const referrals = await base44.entities.ReferralProgram.filter({
-        parent_program_id: profile?.id,
-      });
-      
-      const candidates = await base44.entities.CandidateApplication.filter({
-        source_referrer_user_id: profile?.id,
-      });
-
-      const rewards = await base44.entities.Reward.filter({
-        beneficiary_user_id: profile?.id,
-      });
+      const [referrals, candidates, rewards] = await Promise.all([
+        base44.entities.ReferralProgram.filter({ parent_program_id: profile.id }),
+        base44.entities.CandidateApplication.filter({ source_referrer_user_id: profile.id }),
+        base44.entities.Reward.filter({ beneficiary_user_id: profile.id }),
+      ]);
 
       const earned = rewards
-        .filter((r) => r.status === "paid")
+        .filter(r => r.status === "paid")
         .reduce((sum, r) => sum + (r.amount || 0), 0);
 
       const pending = rewards
-        .filter((r) => ["pending", "approved", "processing"].includes(r.status))
+        .filter(r => ["pending", "approved", "processing"].includes(r.status))
         .reduce((sum, r) => sum + (r.amount || 0), 0);
 
       setStats({
         referrals: referrals.length,
-        contracts: candidates.filter((c) => c.current_status === "CONTRACT_SIGNED").length,
+        contracts: candidates.filter(c => c.current_status === "CONTRACT_SIGNED").length,
         earned,
         pending,
       });
     } catch (e) {
-      console.error("Ошибка загрузки статистики:", e);
+      console.error("[ReferralDashboard] loadStats error:", e);
     }
   };
 
+  // Колбэк от NetworkGrowthBlock после create/reuse через modal
+  const handleSubprogramReady = (data) => {
+    if (data?.program) {
+      setSubprogram(data.program);
+    }
+  };
 
+  const isLoading = loading || shareLoading || baseProgramLoading;
 
-  if (loading || inviteLoading) {
-    return <div className="p-8 text-center"><Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" /></div>;
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center">
+        <Loader2 className="w-8 h-8 animate-spin mx-auto text-primary" />
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-4xl mx-auto p-4 md:p-8">
-        {/* GREETING SECTION */}
+
+        {/* GREETING */}
         <div className="mb-8">
           <h1 className="font-heading text-3xl md:text-4xl font-bold mb-2">
             Привет, {profile?.full_name || "Боец"}! 🛡️
@@ -99,7 +140,7 @@ export default function ReferralDashboard() {
           </p>
         </div>
 
-        {/* ГЛАВНЫЙ HERO-БЛОК — АНКЕТА ВСЕГДА В ЦЕНТРЕ */}
+        {/* ГЛАВНЫЙ HERO — АНКЕТА */}
         <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 border-2 border-accent p-6 shadow-lg mb-4">
           <div className="text-xs font-semibold text-accent uppercase tracking-widest mb-2">Главный инструмент</div>
           <h2 className="font-heading font-black text-2xl md:text-3xl text-primary-foreground leading-tight mb-1">
@@ -109,14 +150,14 @@ export default function ReferralDashboard() {
             Отправьте ссылку — кандидат заполнит анкету, вы получите вознаграждение
           </p>
 
-          {/* Primary CTA */}
           {candidateLink ? (
             <Button
               onClick={() => {
                 if (navigator.share) {
                   navigator.share({ title: "Анкета кандидата — МилитариПартнер", url: candidateLink });
                 } else {
-                  navigator.clipboard.writeText(candidateLink).then(() => toast({ title: "✓ Ссылка скопирована для отправки!" }));
+                  navigator.clipboard.writeText(candidateLink)
+                    .then(() => toast({ title: "✓ Ссылка на анкету скопирована!" }));
                 }
               }}
               className="w-full bg-accent text-accent-foreground hover:bg-accent/90 font-bold h-12 text-base rounded-xl mb-2"
@@ -129,7 +170,6 @@ export default function ReferralDashboard() {
             </Button>
           )}
 
-          {/* Secondary CTA */}
           <Button
             onClick={() => candidateLink && window.open(candidateLink)}
             disabled={!candidateLink}
@@ -140,10 +180,9 @@ export default function ReferralDashboard() {
           </Button>
         </div>
 
-        {/* БЛОК МАСШТАБИРОВАНИЯ СЕТИ */}
+        {/* БЛОК МАСШТАБИРОВАНИЯ СЕТИ — использует новый share-flow */}
         <NetworkGrowthBlock
-          inviteProgram={inviteProgram}
-          inviteLink={inviteLink}
+          shareSubprogram={shareSubprogram}
           baseProgram={baseProgram}
           onSubprogramReady={handleSubprogramReady}
         />
@@ -155,7 +194,7 @@ export default function ReferralDashboard() {
           <span className="font-medium">Доход: {(stats.earned + stats.pending).toLocaleString()} ₽</span>
         </div>
 
-        {/* SECRET CODE SECTION */}
+        {/* SECRET CODE */}
         <div className="bg-card border border-border rounded-xl p-6 mb-8">
           <h3 className="font-bold text-sm uppercase tracking-widest text-muted-foreground mb-4">
             Твой код доступа
@@ -170,17 +209,7 @@ export default function ReferralDashboard() {
               size="sm"
               className="text-xs"
             >
-              {showSecret ? (
-                <>
-                  <EyeOff className="w-3 h-3 mr-1" />
-                  Скрыть
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3 h-3 mr-1" />
-                  Показать
-                </>
-              )}
+              {showSecret ? <><EyeOff className="w-3 h-3 mr-1" />Скрыть</> : <><Eye className="w-3 h-3 mr-1" />Показать</>}
             </Button>
             <Button
               onClick={async () => {
@@ -191,8 +220,7 @@ export default function ReferralDashboard() {
               size="sm"
               className="text-xs"
             >
-              <Copy className="w-3 h-3 mr-1" />
-              Копировать
+              <Copy className="w-3 h-3 mr-1" />Копировать
             </Button>
           </div>
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded mt-3 p-2">
@@ -200,23 +228,20 @@ export default function ReferralDashboard() {
           </p>
         </div>
 
-        {/* REFERRAL STATS CARDS */}
+        {/* STATS CARDS */}
         <div className="grid md:grid-cols-2 gap-4">
           <div className="bg-card border border-border rounded-xl p-6">
             <div className="text-sm text-muted-foreground mb-2">Выплачено</div>
-            <div className="text-3xl font-black text-green-600">
-              {stats.earned.toLocaleString()} ₽
-            </div>
+            <div className="text-3xl font-black text-green-600">{stats.earned.toLocaleString()} ₽</div>
             <div className="text-xs text-muted-foreground mt-2">На счету ✓</div>
           </div>
           <div className="bg-card border border-border rounded-xl p-6">
             <div className="text-sm text-muted-foreground mb-2">В ожидании</div>
-            <div className="text-3xl font-black text-amber-600">
-              {stats.pending.toLocaleString()} ₽
-            </div>
+            <div className="text-3xl font-black text-amber-600">{stats.pending.toLocaleString()} ₽</div>
             <div className="text-xs text-muted-foreground mt-2">Будет через 7-14 дней</div>
           </div>
         </div>
+
       </div>
     </div>
   );

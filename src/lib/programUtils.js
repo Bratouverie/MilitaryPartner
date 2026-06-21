@@ -302,8 +302,12 @@ export async function createChildProgram({ parentProgram, title: childPrefixTitl
  * @param {{ originProgram, ownerUserId, newTitle, newQuota, actorUserId, moderatorId, regionCode, regionName, programCategory }}
  */
 /**
+ * @deprecated НЕ ИСПОЛЬЗОВАТЬ В DASHBOARD SHARE-FLOW.
+ * Создание подпрограммы через dashboard идёт только через safePrepareReferralSubprogram
+ * с явным выбором квоты пользователем через SetRewardModal.
+ * Эта функция оставлена только для legacy совместимости с adminTools.
+ *
  * Создаёт первую подпрограмму приглашения по умолчанию (50% квоты от родителя).
- * Квота округляется вниз до кратности 5000 и строго >= 5000 и < родительской.
  */
 export async function createDefaultInviteSubprogram(parentProgram, ownerUserId) {
   if (!parentProgram) return { program: null, error: "Parent program required" };
