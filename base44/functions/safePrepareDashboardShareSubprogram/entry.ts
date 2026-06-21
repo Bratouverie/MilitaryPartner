@@ -218,23 +218,20 @@ Deno.serve(async (req) => {
       const telegramText = `Присоединяйся по моей ссылке. Вознаграждение за участие — ${quota.toLocaleString()} ₽. Заполни анкету:`;
       const shareText = `${telegramText} ${candidateLink}`;
 
-      try {
-        await base44.asServiceRole.entities.ActionLog.create({
-          actor_user_id: profile.id,
-          actor_role: profile.role || "referrer",
-          action_type: "DASHBOARD_SUBPROGRAM_REUSED",
-          entity_type: "ReferralProgram",
-          entity_id: reuseCandidate.id,
-          action_payload: JSON.stringify({
-            shareAction: shareAction || null,
-            quota,
-            parent_id: resolvedBase.id,
-            storageKey,
-          }),
-        });
-      } catch (e) {
-        console.warn("[safePrepareDashboardShareSubprogram] ActionLog reuse failed (non-critical):", e.message);
-      }
+      // ActionLog обязателен для reuse — не best-effort
+      await base44.asServiceRole.entities.ActionLog.create({
+        actor_user_id: profile.id,
+        actor_role: profile.role || "referrer",
+        action_type: "DASHBOARD_SUBPROGRAM_REUSED",
+        entity_type: "ReferralProgram",
+        entity_id: reuseCandidate.id,
+        action_payload: JSON.stringify({
+          shareAction: shareAction || null,
+          quota,
+          parent_id: resolvedBase.id,
+          storageKey,
+        }),
+      });
 
       return Response.json({
         ok: true,
@@ -325,8 +322,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Некритичные действия — не откатывают child при ошибке
+    // === Критическая цепочка после create: ProgramMembership + ActionLog обязательны.
+    // При ошибке — rollback (удаляем child), возвращаем SERVER_ERROR.
+    // Counter — некритичен, best-effort после успешной критической цепочки. ===
+
     try {
+      // Шаг 7b: ProgramMembership — обязателен для валидного состояния
       await base44.asServiceRole.entities.ProgramMembership.create({
         user_id: profile.id,
         program_id: child.id,
@@ -336,22 +337,8 @@ Deno.serve(async (req) => {
         source_program_id: resolvedBase.id,
         joined_at: new Date().toISOString(),
       });
-    } catch (e) {
-      console.warn("[safePrepareDashboardShareSubprogram] ProgramMembership failed (non-critical):", e.message);
-    }
 
-    try {
-      const newCount = activeChildrenCount + 1;
-      await base44.asServiceRole.entities.ReferralProgram.update(resolvedBase.id, {
-        direct_children_count: newCount,
-        children_count: newCount,
-        can_create_child: newCount < MAX_CHILDREN && parentQuota > MIN_QUOTA,
-      });
-    } catch (e) {
-      console.warn("[safePrepareDashboardShareSubprogram] Parent counter update failed (non-critical):", e.message);
-    }
-
-    try {
+      // Шаг 7c: ActionLog — обязателен для аудита
       await base44.asServiceRole.entities.ActionLog.create({
         actor_user_id: profile.id,
         actor_role: profile.role || "referrer",
@@ -366,8 +353,27 @@ Deno.serve(async (req) => {
           storageKey,
         }),
       });
+    } catch (criticalErr) {
+      // Rollback: удаляем только что созданный child, чтобы не оставить half-created subprogram
+      console.error("[safePrepareDashboardShareSubprogram] Critical post-create step failed, rolling back child:", criticalErr);
+      try {
+        await base44.asServiceRole.entities.ReferralProgram.delete(child.id);
+      } catch (rollbackErr) {
+        console.error("[safePrepareDashboardShareSubprogram] Rollback failed — orphaned child:", child.id, rollbackErr);
+      }
+      return controlledError("SERVER_ERROR", "Не удалось завершить создание подпрограммы. Попробуйте ещё раз.");
+    }
+
+    // Counter — некритичен, не блокирует успех
+    try {
+      const newCount = activeChildrenCount + 1;
+      await base44.asServiceRole.entities.ReferralProgram.update(resolvedBase.id, {
+        direct_children_count: newCount,
+        children_count: newCount,
+        can_create_child: newCount < MAX_CHILDREN && parentQuota > MIN_QUOTA,
+      });
     } catch (e) {
-      console.warn("[safePrepareDashboardShareSubprogram] ActionLog create failed (non-critical):", e.message);
+      console.warn("[safePrepareDashboardShareSubprogram] Parent counter update failed (non-critical):", e.message);
     }
 
     const inviteLink = `${origin}/join/${linkCode}`;
