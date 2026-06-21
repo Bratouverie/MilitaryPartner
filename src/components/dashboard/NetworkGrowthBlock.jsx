@@ -172,58 +172,64 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
               </div>
             </div>
           ) : (
-            /* Нет базовой программы вообще */
-            <div className="rounded-xl bg-muted/60 border border-border p-4 flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
-              <div>
-                <div className="text-sm font-semibold">Нет активной программы</div>
-                <div className="text-xs text-muted-foreground">Перейди в «Мои программы», чтобы активировать программу</div>
+            /* Нет базовой программы — recovery CTA */
+            <div className="rounded-xl bg-muted/60 border border-border p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-semibold">Нет активной программы</div>
+                  <div className="text-xs text-muted-foreground">Выбери программу в разделе «Мои программы», чтобы начать приглашать рефералов</div>
+                </div>
               </div>
+              <Link
+                to="/dashboard/programs"
+                className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground rounded-lg h-9 text-sm font-semibold hover:bg-primary/90 transition-colors"
+              >
+                Открыть Мои программы →
+              </Link>
             </div>
           )}
 
-          {/* Action кнопки */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              onClick={() => handleShareAction("copy")}
-              disabled={!canAct}
-              className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                <Copy className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Скопировать ссылку</div>
-                <div className="text-xs text-muted-foreground">
-                  {hasSubprogram
-                    ? `Вознаграждение реферала: ${rewardText}`
-                    : baseProgram ? "Сначала выберем размер выплаты" : "Нет активной программы"}
+          {/* Action кнопки — только если есть базовая программа */}
+          {canAct && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={() => handleShareAction("copy")}
+                className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
+              >
+                <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <Copy className="w-4 h-4 text-primary" />
                 </div>
-              </div>
-            </button>
+                <div>
+                  <div className="font-semibold text-sm">Скопировать ссылку</div>
+                  <div className="text-xs text-muted-foreground">
+                    {hasSubprogram ? `Вознаграждение реферала: ${rewardText}` : "Сначала выберем размер выплаты"}
+                  </div>
+                </div>
+              </button>
 
-            <button
-              onClick={() => handleShareAction("telegram")}
-              disabled={!canAct}
-              className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
-                <Send className="w-4 h-4 text-blue-600" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Отправить в Telegram</div>
-                <div className="text-xs text-muted-foreground">
-                  {hasSubprogram ? `С вознаграждением ${rewardText}` : baseProgram ? "Сначала выберем размер выплаты" : "Нет активной программы"}
+              <button
+                onClick={() => handleShareAction("telegram")}
+                className="flex items-center gap-3 rounded-xl border border-border p-3.5 text-left hover:bg-muted/60 active:scale-[0.98] transition-all"
+              >
+                <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+                  <Send className="w-4 h-4 text-blue-600" />
                 </div>
-              </div>
-            </button>
-          </div>
+                <div>
+                  <div className="font-semibold text-sm">Отправить в Telegram</div>
+                  <div className="text-xs text-muted-foreground">
+                    {hasSubprogram ? `С вознаграждением ${rewardText}` : "Сначала выберем размер выплаты"}
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
 
           {/* Управление подпрограммой */}
           <div className="pt-1 border-t border-border/50 space-y-0.5">
             <button
               onClick={handleChangeReward}
-              disabled={!baseProgram}
+              disabled={!canAct}
               className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors group py-1.5 w-full disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <div className="flex items-center gap-2">

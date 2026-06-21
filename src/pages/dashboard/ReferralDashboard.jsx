@@ -12,7 +12,7 @@
  * - использовать createDefaultInviteSubprogram
  * - silently выбирать любую child-программу как sharable
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useProfile } from "@/lib/useProfile";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export default function ReferralDashboard() {
   const {
     shareSubprogram,
     setSubprogram,
+    clearSubprogram,
     loading: shareLoading,
   } = useDashboardShareSubprogram(profile?.id);
 
@@ -41,19 +42,15 @@ export default function ReferralDashboard() {
     ? `${window.location.origin}/candidate/${candidateFormCode}`
     : "";
 
-  useEffect(() => {
-    if (profile?.id) {
-      loadStats();
-      loadBaseProgram();
-    }
-  }, [profile?.id]);
-
   /**
    * Загружает активную базовую программу.
-   * ТОЛЬКО ЧИТАЕТ — не переключает, не угадывает.
-   * depth=0, program_kind != child, active — самая ранняя по created_date.
+   * 1. Читает mp_selected_program_id из sessionStorage (выбор из MyPrograms).
+   * 2. Ищет эту программу среди программ пользователя и валидирует.
+   * 3. Fallback на первую валидную root если selected не подходит.
+   * 4. Если shareSubprogram принадлежит другой базовой — clearSubprogram.
    */
-  const loadBaseProgram = async () => {
+  const loadBaseProgram = React.useCallback(async () => {
+    if (!profile?.id) return;
     setBaseProgramLoading(true);
     try {
       const all = await base44.entities.ReferralProgram.filter({
@@ -61,23 +58,61 @@ export default function ReferralDashboard() {
         is_archived: false,
       });
 
-      const root = all
-        .filter(p =>
-          p.is_active &&
-          !p.is_archived &&
-          p.program_status === "active" &&
-          (p.depth || 0) === 0 &&
-          p.program_kind !== "child"
-        )
-        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
+      const isValidBase = (p) =>
+        p.is_active &&
+        !p.is_archived &&
+        p.program_status === "active" &&
+        (p.depth || 0) === 0 &&
+        p.program_kind !== "child";
 
-      setBaseProgram(root || null);
+      // 1. Попробовать сохранённый selected
+      const savedId = sessionStorage.getItem("mp_selected_program_id");
+      const saved = savedId ? all.find(p => p.id === savedId) : null;
+
+      let resolved = null;
+      if (saved && isValidBase(saved)) {
+        resolved = saved;
+      } else {
+        // 2. Fallback: первая валидная по дате создания
+        const fallback = all
+          .filter(isValidBase)
+          .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
+        if (fallback) {
+          resolved = fallback;
+          sessionStorage.setItem("mp_selected_program_id", fallback.id);
+        }
+      }
+
+      setBaseProgram(resolved || null);
+
+      // Если shareSubprogram принадлежит другой базовой — сбросить (используем ref-snapshot)
+      // Читаем из localStorage напрямую, чтобы не зависеть от stale closure
+      if (resolved) {
+        try {
+          const cachedShareId = localStorage.getItem(`dashboard_share_sub_${profile.id}`);
+          if (cachedShareId) {
+            const shareProgs = await base44.entities.ReferralProgram.filter({ id: cachedShareId });
+            const shareProg = shareProgs[0];
+            if (shareProg && shareProg.parent_program_id !== resolved.id) {
+              clearSubprogram();
+            }
+          }
+        } catch {}
+      }
     } catch (e) {
       console.error("[ReferralDashboard] loadBaseProgram error:", e);
     } finally {
       setBaseProgramLoading(false);
     }
-  };
+  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (profile?.id) {
+      loadStats();
+      loadBaseProgram();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   const loadStats = async () => {
     try {
@@ -164,9 +199,17 @@ export default function ReferralDashboard() {
             >
               <Share2 className="w-5 h-5 mr-2" />Отправить анкету кандидату
             </Button>
-          ) : (
+          ) : baseProgramLoading ? (
             <Button disabled className="w-full bg-accent/50 text-accent-foreground font-bold h-12 text-base rounded-xl mb-2">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />Загрузка ссылки…
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />Загрузка…
+            </Button>
+          ) : (
+            /* Загрузка завершена, но baseProgram не найдена */
+            <Button
+              onClick={() => window.location.href = "/dashboard/programs"}
+              className="w-full bg-accent/80 text-accent-foreground font-bold h-12 text-base rounded-xl mb-2"
+            >
+              Нет активной программы — Открыть Мои программы →
             </Button>
           )}
 
