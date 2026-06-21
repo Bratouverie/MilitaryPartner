@@ -227,6 +227,7 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
 
           {/* Управление подпрограммой */}
           <div className="pt-1 border-t border-border/50 space-y-0.5">
+            {/* Открывает SetRewardModal — требует baseProgram */}
             <button
               onClick={handleChangeReward}
               disabled={!canAct}
@@ -238,6 +239,7 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
               </div>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </button>
+            {/* Навигация в /dashboard/link — всегда доступна */}
             <Link
               to="/dashboard/link"
               className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors group py-1.5"

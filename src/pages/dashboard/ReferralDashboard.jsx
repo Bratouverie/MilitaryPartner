@@ -47,7 +47,7 @@ export default function ReferralDashboard() {
    * 1. Читает mp_selected_program_id из sessionStorage (выбор из MyPrograms).
    * 2. Ищет эту программу среди программ пользователя и валидирует.
    * 3. Fallback на первую валидную root если selected не подходит.
-   * 4. Если shareSubprogram принадлежит другой базовой — clearSubprogram.
+   * 4. Обновляет sessionStorage корректным id при fallback.
    */
   const loadBaseProgram = useCallback(async () => {
     if (!profile?.id) return;
