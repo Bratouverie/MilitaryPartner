@@ -10,9 +10,8 @@ import NetworkGrowthBlock from "@/components/dashboard/NetworkGrowthBlock";
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
-  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getCandidateLink, setActiveProgram, reload: reloadInviteProgram } = useActiveInviteProgram(profile?.id);
+  const { inviteProgram, inviteLink, loading: inviteLoading, getCandidateLink, setActiveProgram } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
-  const [creatingInvite, setCreatingInvite] = useState(false);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
   const [baseProgram, setBaseProgram] = useState(null);
   const referralLink = inviteLink;
@@ -42,18 +41,6 @@ export default function ReferralDashboard() {
     if (data?.program) {
       setActiveProgram(data.program);
     }
-  };
-
-  const handleCreateInvite = async () => {
-    setCreatingInvite(true);
-    try {
-      const owned = await base44.entities.ReferralProgram.filter({ owner_user_id: profile?.id });
-      const parent = owned.find(p => !p.parent_program_id || p.program_kind !== "child");
-      if (!parent) { toast({ title: "Нет родительской программы", variant: "destructive" }); return; }
-      const { program, error } = await createInviteProgram(parent);
-      if (program) toast({ title: "✓ Программа приглашения создана!" });
-      else toast({ title: error || "Ошибка создания программы", variant: "destructive" });
-    } finally { setCreatingInvite(false); }
   };
 
   const loadStats = async () => {

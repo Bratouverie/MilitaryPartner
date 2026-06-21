@@ -102,14 +102,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // --- 5. Вычислить и валидировать квоту ---
+    // --- 5. Валидировать квоту — ОБЯЗАТЕЛЬНО явная, сервер не угадывает ---
     const parentQuota = baseProgram.reward_quota || 0;
-    let quota = Number(requestedQuota);
+    const quota = Number(requestedQuota);
 
     if (!Number.isFinite(quota) || quota <= 0) {
-      // Если квота не передана — вычислить default (50%)
-      quota = Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP;
-      if (quota < MIN_QUOTA) quota = MIN_QUOTA;
+      return Response.json({
+        success: false,
+        error: "Укажите размер вознаграждения реферала",
+        requiresQuotaInput: true,
+        parentQuota,
+        suggestedQuota: Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP || MIN_QUOTA,
+      });
     }
 
     // Валидация

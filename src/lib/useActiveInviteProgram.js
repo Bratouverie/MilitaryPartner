@@ -5,7 +5,6 @@
  */
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
-import { createDefaultInviteSubprogram } from "./programUtils";
 import { generateTelegramShareText, formatRewardAmount } from "./payoutHelpers";
 
 export function useActiveInviteProgram(profileId) {
@@ -40,15 +39,6 @@ export function useActiveInviteProgram(profileId) {
     }
   };
 
-  const createInviteProgram = async (parentProgram) => {
-    const { program, error } = await createDefaultInviteSubprogram(parentProgram, profileId);
-    if (program) {
-      setInviteProgram(program);
-      setInviteLink(`${window.location.origin}/join/${program.link_code}`);
-    }
-    return { program, error };
-  };
-
   const setActiveProgram = (program) => {
     if (!program?.link_code) return;
     setInviteProgram(program);
@@ -70,7 +60,7 @@ export function useActiveInviteProgram(profileId) {
 
   return { 
     inviteProgram, inviteLink, loading, 
-    reload: loadProgram, createInviteProgram, setActiveProgram,
+    reload: loadProgram, setActiveProgram,
     getTelegramShareUrl, getRewardAmount, getCandidateLink 
   };
 }

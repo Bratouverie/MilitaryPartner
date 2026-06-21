@@ -3,24 +3,27 @@
  * Открывается при первом share/copy и при клике «Изменить размер выплаты».
  * Отправляет запрос на safePrepareReferralSubprogram.
  */
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import { base44 } from "@/api/base44Client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, X, Zap } from "lucide-react";
 import { MIN_QUOTA, QUOTA_STEP } from "@/lib/programUtils";
-import { formatRewardAmount } from "@/lib/payoutHelpers";
 
 export default function SetRewardModal({ baseProgram, onClose, onReady }) {
   const parentQuota = baseProgram?.reward_quota || 0;
-  const defaultQuota = Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP || MIN_QUOTA;
+  const suggestedQuota = Math.floor((parentQuota * 0.5) / QUOTA_STEP) * QUOTA_STEP || MIN_QUOTA;
 
-  const [quota, setQuota] = useState(defaultQuota);
+  // Поле пустое — пользователь обязан выбрать явно
+  const [quota, setQuota] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldError, setFieldError] = useState("");
+  // Race-protection: не допускаем двойной submit
+  const submittingRef = useRef(false);
 
   const maxQuota = parentQuota - QUOTA_STEP;
+  const quotaNum = Number(quota);
 
   const validate = (val) => {
     const n = Number(val);
@@ -40,6 +43,9 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
   const handleSubmit = async () => {
     const err = validate(quota);
     if (err) { setFieldError(err); return; }
+    // Race protection
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     setLoading(true);
     setError("");
@@ -50,7 +56,6 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
 
       if (!res.data?.success) {
         setError(res.data?.error || "Ошибка. Попробуйте ещё раз.");
-        setLoading(false);
         return;
       }
 
@@ -59,6 +64,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
       setError("Ошибка сети. Попробуйте ещё раз.");
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 
@@ -78,7 +84,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
 
         <div className="p-5 space-y-4">
           <p className="text-sm text-muted-foreground leading-snug">
-            Укажи, сколько получит новый реферал. Мы автоматически создадим ссылку на эту подпрограмму.
+            Укажи, сколько получит новый реферал — система создаст подпрограмму автоматически или переиспользует уже существующую.
           </p>
 
           {/* Quota input */}
@@ -86,7 +92,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-sm font-medium">Вознаграждение реферала</label>
               <span className="text-xs text-muted-foreground">
-                До {maxQuota.toLocaleString()} ₽
+                {MIN_QUOTA.toLocaleString()} – {maxQuota.toLocaleString()} ₽
               </span>
             </div>
             <div className="relative">
@@ -97,6 +103,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
                 min={MIN_QUOTA}
                 max={maxQuota}
                 step={QUOTA_STEP}
+                placeholder={`например ${suggestedQuota.toLocaleString()} (50%)`}
                 className={`h-11 text-base font-semibold pr-8 ${fieldError ? "border-destructive" : ""}`}
                 autoFocus
               />
@@ -104,34 +111,39 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
             </div>
             {fieldError && <p className="text-xs text-destructive mt-1">{fieldError}</p>}
 
-            {/* Preset chips */}
+            {/* Preset chips — быстрый выбор */}
             <div className="flex gap-2 mt-2 flex-wrap">
               {[0.25, 0.5, 0.75].map(pct => {
                 const val = Math.floor((parentQuota * pct) / QUOTA_STEP) * QUOTA_STEP;
                 if (val < MIN_QUOTA || val >= parentQuota) return null;
+                const isSelected = quotaNum === val;
                 return (
                   <button
                     key={pct}
+                    type="button"
                     onClick={() => { setQuota(val); setFieldError(""); }}
                     className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      Number(quota) === val
+                      isSelected
                         ? "border-primary bg-primary/10 text-primary font-semibold"
                         : "border-border text-muted-foreground hover:border-primary/40"
                     }`}
                   >
                     {Math.round(pct * 100)}% · {val.toLocaleString()} ₽
+                    {pct === 0.5 && !isSelected && <span className="ml-1 text-primary/70">рекомендуем</span>}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          {/* Helper */}
-          <div className="bg-muted/60 rounded-xl p-3 text-xs text-muted-foreground leading-snug">
-            Ваша программа: <strong>{parentQuota.toLocaleString()} ₽</strong><br />
-            Реферал получит: <strong className="text-foreground">{Number(quota) > 0 ? Number(quota).toLocaleString() : "—"} ₽</strong><br />
-            Вы зарабатываете: <strong className="text-foreground">{parentQuota - (Number(quota) || 0) > 0 ? (parentQuota - Number(quota)).toLocaleString() : "—"} ₽</strong>
-          </div>
+          {/* Helper — только если что-то введено */}
+          {quotaNum > 0 && !fieldError && (
+            <div className="bg-muted/60 rounded-xl p-3 text-xs text-muted-foreground leading-snug">
+              Ваша программа: <strong>{parentQuota.toLocaleString()} ₽</strong><br />
+              Реферал получит: <strong className="text-foreground">{quotaNum.toLocaleString()} ₽</strong><br />
+              Вы зарабатываете: <strong className="text-foreground">{(parentQuota - quotaNum).toLocaleString()} ₽</strong>
+            </div>
+          )}
 
           {error && <div className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</div>}
 
@@ -141,7 +153,7 @@ export default function SetRewardModal({ baseProgram, onClose, onReady }) {
             className="w-full bg-primary font-bold h-11"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Zap className="w-4 h-4 mr-2" />}
-            Создать и использовать
+            {loading ? "Создаём…" : "Создать и использовать"}
           </Button>
         </div>
       </div>
