@@ -10,18 +10,39 @@ import NetworkGrowthBlock from "@/components/dashboard/NetworkGrowthBlock";
 
 export default function ReferralDashboard() {
   const { profile, loading } = useProfile();
-  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getCandidateLink } = useActiveInviteProgram(profile?.id);
+  const { inviteProgram, inviteLink, loading: inviteLoading, createInviteProgram, getCandidateLink, setActiveProgram, reload: reloadInviteProgram } = useActiveInviteProgram(profile?.id);
   const [showSecret, setShowSecret] = useState(false);
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [stats, setStats] = useState({ referrals: 0, contracts: 0, earned: 0, pending: 0 });
+  const [baseProgram, setBaseProgram] = useState(null);
   const referralLink = inviteLink;
   const candidateLink = getCandidateLink();
 
   useEffect(() => {
     if (profile?.id) {
       loadStats();
+      loadBaseProgram();
     }
   }, [profile?.id]);
+
+  const loadBaseProgram = async () => {
+    try {
+      const all = await base44.entities.ReferralProgram.filter({ owner_user_id: profile?.id, is_archived: false });
+      const root = all
+        .filter(p => p.is_active && !p.is_archived && p.program_status === "active" && (p.is_root || p.program_kind === "root" || p.program_kind === "promoted_root" || (!p.parent_program_id && (p.depth || 0) === 0)))
+        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0];
+      setBaseProgram(root || null);
+    } catch (e) {
+      console.error("loadBaseProgram error:", e);
+    }
+  };
+
+  // Колбэк: подпрограмма готова (создана или переиспользована через модал)
+  const handleSubprogramReady = (data) => {
+    if (data?.program) {
+      setActiveProgram(data.program);
+    }
+  };
 
   const handleCreateInvite = async () => {
     setCreatingInvite(true);
@@ -136,6 +157,8 @@ export default function ReferralDashboard() {
         <NetworkGrowthBlock
           inviteProgram={inviteProgram}
           inviteLink={inviteLink}
+          baseProgram={baseProgram}
+          onSubprogramReady={handleSubprogramReady}
         />
 
         {/* MICRO STATS */}
