@@ -148,7 +148,9 @@ export default function ReferralDashboard() {
     }
   };
 
-  const isLoading = loading || shareLoading || baseProgramLoading;
+  // baseProgramLoading намеренно НЕ включён в isLoading:
+  // страница рендерится сразу, CTA показывает свой локальный spinner или recovery state.
+  const isLoading = loading || shareLoading;
 
   if (isLoading) {
     return (
