@@ -92,16 +92,6 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
     setShowModal(true);
   };
 
-  // --- Кнопка «Изменить размер выплаты» — открывает modal с shareAction: changeReward ---
-  const handleChangeReward = () => {
-    if (!baseProgram) {
-      toast({ title: "Нет активной программы", description: "Перейди в «Мои программы»", variant: "destructive" });
-      return;
-    }
-    setPendingAction(null);
-    setShowModal(true);
-  };
-
   // --- Колбэк SetRewardModal: получаем только quota (число) ---
   // Orchestration вызывается здесь через prepareShareSubprogram из hook
   const handleModalReady = async (requestedQuota) => {
@@ -235,26 +225,14 @@ export default function NetworkGrowthBlock({ shareSubprogram, baseProgram, onSub
           )}
 
           {/* Управление подпрограммой */}
-          <div className="pt-1 border-t border-border/50 space-y-0.5">
-            {/* Открывает SetRewardModal — требует baseProgram */}
-            <button
-              onClick={handleChangeReward}
-              disabled={!canAct}
-              className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors group py-1.5 w-full disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <div className="flex items-center gap-2">
-                <Settings2 className="w-4 h-4" />
-                <span>Изменить размер выплаты рефералу</span>
-              </div>
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-            </button>
+          <div className="pt-3 border-t border-border/50">
             {/* Навигация в /dashboard/link — всегда доступна */}
             <Link
               to="/dashboard/link"
-              className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors group py-1.5"
+              className="flex items-center justify-between text-sm text-muted-foreground hover:text-foreground transition-colors group py-2"
             >
               <div className="flex items-center gap-2">
-                <ChevronRight className="w-3.5 h-3.5 opacity-40" />
+                <Settings2 className="w-4 h-4" />
                 <span>Управление подпрограммами</span>
               </div>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />

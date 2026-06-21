@@ -44,38 +44,64 @@ export default function ReferralDashboard() {
     : "";
 
   /**
-   * LAUNCH-MODE WORKAROUND:
-   * Загружает первую доступную валидную root/base программу без зависимости от storage-контекста.
-   * Это временное решение для быстрого запуска — не использует mp_selected_program_id или mp_selected_base_program_id.
+   * Загружает активную программу из "Мои программы" (mp_selected_program_id) или fallback на первую валидную root.
    */
-  const loadBaseProgram = useCallback(async () => {
-    if (!profile?.id) return;
-    setBaseProgramLoading(true);
-    try {
-      const all = await base44.entities.ReferralProgram.filter({
-        owner_user_id: profile.id,
-      });
+   const loadBaseProgram = useCallback(async () => {
+     if (!profile?.id) return;
+     setBaseProgramLoading(true);
+     try {
+       const all = await base44.entities.ReferralProgram.filter({
+         owner_user_id: profile.id,
+       });
 
-      const isValidBase = (p) =>
-        p.is_active === true &&
-        p.is_archived !== true &&
-        p.program_status === "active" &&
-        (p.depth || 0) === 0 &&
-        p.program_kind !== "child";
+       const isValidBase = (p) =>
+         p.is_active === true &&
+         p.is_archived !== true &&
+         p.program_status === "active" &&
+         (p.depth || 0) === 0 &&
+         p.program_kind !== "child";
 
-      // Выбрать первую валидную root/base по дате создания, без storage-контекста
-      const resolved = all
-        .filter(isValidBase)
-        .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
+       // Попробовать загрузить активную из "Мои программы"
+       const selectedId = sessionStorage.getItem("mp_selected_program_id");
+       const selected = selectedId ? all.find(p => p.id === selectedId) : null;
 
-      setBaseProgram(resolved);
-    } catch (e) {
-      console.error("[ReferralDashboard] loadBaseProgram error:", e);
-      setBaseProgram(null);
-    } finally {
-      setBaseProgramLoading(false);
-    }
-  }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+       // Если выбрана — проверить что это валидный base, иначе взять её root родителя
+       let resolved = null;
+       if (selected) {
+         if (isValidBase(selected)) {
+           resolved = selected;
+         } else if (selected.parent_program_id) {
+           // Это child — ищем его root родителя
+           let current = selected;
+           const visited = new Set();
+           while (current?.parent_program_id && !visited.has(current.id)) {
+             visited.add(current.id);
+             const parent = all.find(p => p.id === current.parent_program_id);
+             if (!parent) break;
+             if (isValidBase(parent)) {
+               resolved = parent;
+               break;
+             }
+             current = parent;
+           }
+         }
+       }
+
+       // Fallback: первая валидная root/base
+       if (!resolved) {
+         resolved = all
+           .filter(isValidBase)
+           .sort((a, b) => new Date(a.created_date) - new Date(b.created_date))[0] || null;
+       }
+
+       setBaseProgram(resolved);
+     } catch (e) {
+       console.error("[ReferralDashboard] loadBaseProgram error:", e);
+       setBaseProgram(null);
+     } finally {
+       setBaseProgramLoading(false);
+     }
+   }, [profile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (profile?.id) {
@@ -144,17 +170,28 @@ export default function ReferralDashboard() {
       <div className="max-w-4xl mx-auto p-4 md:p-8">
 
         {/* GREETING */}
-        <div className="mb-8">
-          <h1 className="font-heading text-3xl md:text-4xl font-bold mb-2">
-            Привет, {profile?.full_name || "Боец"}! 🛡️
-          </h1>
-          <p className="text-lg text-muted-foreground">
-            Твой заработок этого месяца:{" "}
-            <span className="font-bold text-primary text-2xl">
-              {(stats.earned + stats.pending).toLocaleString()} ₽
-            </span>
-          </p>
-        </div>
+         <div className="mb-8">
+           <h1 className="font-heading text-3xl md:text-4xl font-bold mb-2">
+             Привет, {profile?.full_name || "Боец"}! 🛡️
+           </h1>
+           <div className="space-y-1">
+             <p className="text-lg text-muted-foreground">
+               Твой заработок этого месяца:{" "}
+               <span className="font-bold text-primary text-2xl">
+                 {(stats.earned + stats.pending).toLocaleString()} ₽
+               </span>
+             </p>
+             {baseProgram && (
+               <p className="text-sm text-muted-foreground">
+                 Цель месяца:{" "}
+                 <span className="font-semibold text-foreground">
+                   {(baseProgram.reward_quota || 0).toLocaleString()} ₽
+                 </span>
+                 <span className="text-xs opacity-60 ml-1">(за 1 контракт в активной программе)</span>
+               </p>
+             )}
+           </div>
+         </div>
 
         {/* ГЛАВНЫЙ HERO — АНКЕТА */}
         <div className="rounded-2xl bg-gradient-to-br from-primary to-primary/80 border-2 border-accent p-6 shadow-lg mb-4">
